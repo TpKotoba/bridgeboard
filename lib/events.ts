@@ -1,0 +1,91 @@
+import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
+import { Board, BridgeEvent, createSchema, Mutation, Result, StoredEvent, resultKey, seats, Vulnerability } from './model';
+import { contractScore, project } from './scoring';
+import { parsePbn, parseMovement } from './imports';
+const vulCycle:Vulnerability[]=['None','NS','EW','All','NS','EW','All','None','EW','All','None','NS','All','None','NS','EW'];
+export function makeBoard(number:number):Board {
+  const deck=['S','H','D','C'].flatMap(s=>'AKQJT98765432'.split('').map(r=>s+r));
+  let seed=number*7919+41;
+  for(let i=51;i>0;i--) {seed=(Math.imul(seed,1664525)+1013904223)>>>0;const j=seed%(i+1);[deck[i],deck[j]]=[deck[j],deck[i]];}
+  return {number,dealer:seats[(number-1)%4],vulnerability:vulCycle[(number-1)%16],deal:Object.fromEntries(seats.map((s,i)=>[s,deck.slice(i*13,i*13+13)])) as Board['deal']};
+}
+export function createEvent(input:z.infer<typeof createSchema>,id:string=randomUUID()):BridgeEvent {
+  const data=createSchema.parse(input),now=new Date().toISOString();
+  const participants=data.names.map((name,i)=>({id:`p${i+1}`,name,players:''}));
+  const rotation:(string|null)[]=participants.map(p=>p.id);
+  if(rotation.length%2) rotation.push(null);
+  const e:BridgeEvent={id,name:data.name,kind:data.kind,date:data.date,venue:data.venue,rounds:data.rounds,boardsPerRound:data.boardsPerRound,status:'live',publishBoards:false,demo:false,participants,boards:Array.from({length:data.rounds*data.boardsPerRound},(_,i)=>makeBoard(i+1)),assignments:[],results:{},audit:[],revision:1,updatedAt:now};
+  // Fixed round-robin schedule. Every active table plays the same board set that round.
+  // Pairs events therefore require duplicate board sets, not a physical Mitchell movement.
+  for(let round=1;round<=data.rounds;round++) {
+    const boards=Array.from({length:data.boardsPerRound},(_,i)=>(round-1)*data.boardsPerRound+i+1);
+    let table=0;
+    for(let i=0;i<rotation.length/2;i++) {
+      let a=rotation[i],b=rotation[rotation.length-1-i];
+      if(!a||!b) continue;
+      if((round+i)%2===0) [a,b]=[b,a];
+      table++;const matchId=`r${round}m${table}`;
+      e.assignments.push({id:`${matchId}o`,round,table,room:data.kind==='teams'?'open':'pairs',ns:a,ew:b,boards,matchId});
+      if(data.kind==='teams') e.assignments.push({id:`${matchId}c`,round,table,room:'closed',ns:b,ew:a,boards,matchId});
+    }
+    rotation.splice(1,0,rotation.pop()!);
+  }
+  // New events have no real deals until PBN import. Use empty hands instead of generated ones.
+  e.boards=e.boards.map(b=>({...b,deal:{N:[],E:[],S:[],W:[]}}));
+  e.audit=[{at:now,action:'建立賽事',reason:'固定輪次賽程',revision:1}];
+  return e;
+}
+export class DomainError extends Error { constructor(message:string,public status=400) {super(message);} }
+export function applyMutation(stored:StoredEvent,command:Mutation):StoredEvent {
+  if(stored.requests.includes(command.requestId)) return stored;
+  if(command.revision!==stored.event.revision) throw new DomainError('成績已被其他操作更新，請重新載入後再提交。',409);
+  const e=structuredClone(stored.event),at=new Date().toISOString();
+  const changes:{key:string;before:Result|null;after:Result|null}[]=[];
+  if(command.action==='results') {
+    if(e.status==='finished') throw new DomainError('請先重新開放賽事，再更正成績。');
+    const seen=new Set<string>();
+    for(const r of command.results) {
+      const a=e.assignments.find(a=>a.id===r.assignmentId),b=e.boards.find(b=>b.number===r.board);
+      if(!a||!b||!a.boards.includes(r.board)) throw new DomainError('桌次與牌號不符合賽程。');
+      const key=resultKey(a.id,b.number);
+      if(seen.has(key)) throw new DomainError('同一批資料包含重複成績。');seen.add(key);
+      const after={...r,nsScore:contractScore(r,b.vulnerability),updatedAt:at};
+      changes.push({key,before:e.results[key]??null,after});e.results[key]=after;
+    }
+  } else if(command.action==='settings') {
+    if(command.status==='finished'&&Object.keys(e.results).length!==e.assignments.reduce((n,a)=>n+a.boards.length,0)) throw new DomainError('還有未收齊的成績，不能結束賽事。');
+    if(command.status==='finished'&&e.kind==='pairs'&&project(e).standings.some(s=>s.score===null)) throw new DomainError('有搭檔缺少可比較的 MP 成績，請先核對 movement。');
+    e.status=command.status;e.publishBoards=command.publishBoards;
+  } else if(command.action==='pbn') {
+    if(Object.keys(e.results).length) throw new DomainError('已有成績時不可更換牌型與身價。請在收分前匯入。');
+    let boards:Board[];
+    try{boards=parsePbn(command.pbn);}catch(error){throw new DomainError((error as Error).message);}
+    if(boards.length!==e.boards.length||boards.some(b=>!e.boards.some(x=>x.number===b.number))) throw new DomainError('PBN 需包含賽事所有牌號，且不得包含額外牌號。');
+    e.boards=boards;
+  } else {
+    if(Object.keys(e.results).length) throw new DomainError('已有成績時不可更換 movement。');
+    if(e.kind!=='pairs') throw new DomainError('Movement 匯入僅適用雙人賽。');
+    try{e.assignments=parseMovement(command.csv,e);}catch(error){throw new DomainError((error as Error).message);}
+  }
+  e.revision++;e.updatedAt=at;
+  e.audit.push({at,action:({results:'收分／更正',settings:'發布設定',pbn:'匯入牌型',movement:'匯入 movement'})[command.action],reason:command.reason,revision:e.revision,...(changes.length?{changes}:{})});
+  return {event:e,requests:[...stored.requests,command.requestId].slice(-500),projection:project(e)};
+}
+export function seedEvents():StoredEvent[] {
+  const names=['臺北松山','新竹交大','臺中青鳥','臺南南風','高雄海港','花蓮山海'];
+  const team=createEvent({name:'秋季橋牌邀請賽',kind:'teams',date:'2026-10-12',venue:'臺北・橋牌交流中心',names,rounds:5,boardsPerRound:8},'autumn-teams');
+  const pairs=createEvent({name:'週末雙人積分賽',kind:'pairs',date:'2026-10-12',venue:'臺北・橋牌交流中心',names:['林冠宇 / 陳思妤','張哲維 / 王品涵','李柏翰 / 黃詠晴','吳承恩 / 劉芷瑜','蔡宗翰 / 楊庭安','許家豪 / 鄭雅文','謝宇軒 / 郭子晴','洪偉倫 / 曾心怡','邱俊傑 / 賴佩珊','徐博文 / 周佳穎','蘇奕辰 / 葉婉婷','莊凱翔 / 廖昀潔','江紹廷 / 何映彤','蕭立衡 / 宋采蓉','梁昱廷 / 方予安'],rounds:13,boardsPerRound:2},'weekend-pairs');
+  return [team,pairs].map(e=>{
+    e.demo=true;e.publishBoards=true;e.boards=e.boards.map(b=>makeBoard(b.number));
+    const lastRound=e.kind==='teams'?3:9;
+    for(const a of e.assignments) for(const board of a.boards) {
+      if(a.round>lastRound||(a.round===lastRound&&(a.table+board)%3===0)) continue;
+      const n=board*13+a.table*7+(a.room==='closed'?3:0);
+      const level=[3,4,2,3,4,6][n%6],strain=(['NT','S','H','D','S','NT'] as const)[n%6];
+      const r={assignmentId:a.id,board,level,strain,doubled:1 as const,declarer:(['N','E','S','W'] as const)[n%4],tricks:Math.min(13,level+6+(n%4)-1),lead:'',updatedAt:e.updatedAt};
+      e.results[resultKey(a.id,board)]={...r,nsScore:contractScore(r,e.boards[board-1].vulnerability)};
+    }
+    return {event:e,requests:[],projection:project(e)};
+  });
+}
