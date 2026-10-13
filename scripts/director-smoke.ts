@@ -54,6 +54,8 @@ async function main() {
     await patch({ action: 'movement', csv: 'forbidden' }, 403);
     await patch({ action: 'board-publication', board: 1, published: true }, 403);
     await patch({ action: 'settings', status: 'live', prefix: 'forbidden' }, 403);
+    await patch({ action: 'round-control', round: 1, phase: 'playing' }, 403);
+    await patch({ action: 'round-timing', round: 1, startAt: null, endAt: null }, 403);
     const a = staff.body.assignments[0];
     await patch({ action: 'ruling', assignmentId: a.id, board: a.boards[0], cancelled: true });
     await patch({ action: 'penalty', participantId: 'p1', amount: 2 });
@@ -63,6 +65,16 @@ async function main() {
     );
     await login(process.env.DIRECTOR_PASSWORD ?? 'local-bridge-director-2026');
     assert.ok('audit' in (await call(`/api/admin/events/${id}`)).body);
+    await patch({ action: 'round-control', round: 1, phase: 'playing' });
+    await patch({
+      action: 'round-timing',
+      round: 1,
+      startAt: '2026-10-14T10:00:00+08:00',
+      endAt: '2026-10-14T10:30:00+08:00',
+    });
+    const progressEvent = await call(`/api/events/${id}`);
+    assert.equal(progressEvent.body.currentRound, 1);
+    assert.equal(progressEvent.body.roundTimes['1'].endAt, '2026-10-14T10:30:00+08:00');
     assert.equal(
       (await call(`/api/admin/events/${id}`, 'DELETE', { confirmName: 'wrong', revision: 1 }))
         .status,
@@ -80,7 +92,10 @@ async function main() {
     assert.equal(updated.status, 200);
     assert.equal((await call(`/api/events/${id}`)).body.awardPlaces, 4);
     assert.equal((await call(`/api/events/${id}`)).body.prefix, '更新前綴');
-    assert.equal((await call('/api/events')).body.events.find((e: {id: string}) => e.id === id).prefix, '更新前綴');
+    assert.equal(
+      (await call('/api/events')).body.events.find((e: { id: string }) => e.id === id).prefix,
+      '更新前綴',
+    );
     assert.equal(
       (await call(`/api/admin/events/${id}`, 'DELETE', { confirmName: name, revision: 1 })).status,
       409,

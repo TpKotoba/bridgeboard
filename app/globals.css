@@ -295,8 +295,13 @@ small {
 .session-control.expanded {
   width: 132px;
 }
-.session-control .session-role { flex-basis: 112px; white-space: nowrap; }
-.session-control.expanded .session-role { flex-basis: 68px; }
+.session-control .session-role {
+  flex-basis: 112px;
+  white-space: nowrap;
+}
+.session-control.expanded .session-role {
+  flex-basis: 68px;
+}
 .top-actions .session-login {
   width: 56px;
   height: 32px;
@@ -313,8 +318,14 @@ small {
   border-radius: 12px;
   padding: 5px 12px;
 }
-.password-input { display: block; position: relative; }
-.password-input input { width: 100%; padding-right: 48px; }
+.password-input {
+  display: block;
+  position: relative;
+}
+.password-input input {
+  width: 100%;
+  padding-right: 48px;
+}
 .password-toggle {
   position: absolute;
   top: 0;
@@ -329,7 +340,9 @@ small {
   color: #65766b;
   cursor: pointer;
 }
-.password-toggle:hover { color: #294b3e; }
+.password-toggle:hover {
+  color: #294b3e;
+}
 .session-logout {
   flex: 0 0 64px;
   border: 0;
@@ -538,6 +551,53 @@ main {
   border-radius: 7px;
   padding: 18px 20px 14px;
   min-height: 111px;
+}
+.stat-detail { color: #929d8e; font-size: 11px; margin-top: 8px; font-weight: 400; }
+.interactive-stat {
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.interactive-stat:hover {
+  border-color: #849a7b;
+}
+.section-collapse {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 0;
+  margin-bottom: 8px;
+  border: 0;
+  background: transparent;
+  color: #738176;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.section-collapse svg {
+  transition: transform 150ms ease;
+}
+.section-collapse svg.collapsed {
+  transform: rotate(-90deg);
+}
+#event-switcher[hidden],
+#event-dashboard[hidden] {
+  display: none;
+}
+.round-settings-form + .round-settings-form {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 24px;
+}
+.round-settings-form h4 {
+  margin-bottom: 16px;
+}
+.player-detail-popover {
+  max-height: 70vh;
+  overflow-y: auto;
 }
 .stat-top {
   display: flex;
@@ -2912,6 +2972,7 @@ table th[aria-sort='descending'] > button {
 }
 .event-heading {
   display: grid;
+  margin-bottom: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 2px 14px;
@@ -2939,10 +3000,14 @@ table th[aria-sort='descending'] > button {
   white-space: pre-wrap;
 }
 @media (max-width: 1000px) {
-  .event-heading h2 { font-size: 26px; }
+  .event-heading h2 {
+    font-size: 26px;
+  }
 }
 @media (max-width: 560px) {
-  .event-heading h2 { font-size: 23px; }
+  .event-heading h2 {
+    font-size: 23px;
+  }
 }
 .event-title-button {
   background: transparent;
@@ -2953,9 +3018,18 @@ table th[aria-sort='descending'] > button {
   text-align: inherit;
   cursor: pointer;
 }
-.event-title-button:hover { text-decoration: underline; text-underline-offset: 4px; }
-.event-information { line-height: 1.8; overflow-wrap: anywhere; }
-.event-information strong { display: block; margin-bottom: 6px; }
+.event-title-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.event-information {
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.event-information strong {
+  display: block;
+  margin-bottom: 6px;
+}
 .event-heading > .button {
   grid-column: 2;
   grid-row: 2;
@@ -2993,6 +3067,9 @@ table th[aria-sort='descending'] > button {
   overflow-x: auto;
   gap: 8px;
 }
+main > .page-heading { margin-bottom: 10px; }
+main > .section-collapse { padding: 4px 0; margin-bottom: 4px; }
+main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false'] { margin-bottom: 0; }
 .compact-event-strip .event-option,
 .all-events-list .event-option {
   min-width: 0;
@@ -3032,9 +3109,19 @@ table th[aria-sort='descending'] > button {
   background: #f1f5ee;
   border-color: #d5dfcf;
 }
-.more-events .more-events-icon { background: #dfe9da; color: #56714e; }
-.more-events-arrow { margin-left: auto; flex-shrink: 0; color: #56714e; }
-.compact-event-strip .more-events:hover { background: #e8f0e3; border-color: #849a7b; }
+.more-events .more-events-icon {
+  background: #dfe9da;
+  color: #56714e;
+}
+.more-events-arrow {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: #56714e;
+}
+.compact-event-strip .more-events:hover {
+  background: #e8f0e3;
+  border-color: #849a7b;
+}
 .all-events-list {
   display: grid;
   gap: 8px;

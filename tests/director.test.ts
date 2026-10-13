@@ -6,6 +6,8 @@ import { parseMovement, exportPbn, parsePbn } from '../lib/imports';
 import { boardGroups, boardRange } from '../lib/board-groups';
 import { publicBoards } from '../lib/public-event';
 import type { StoredEvent, Mutation } from '../lib/model';
+import { mutationSchema } from '../lib/model';
+import { roundProgress } from '../lib/round-progress';
 
 function setup() {
   const event = createEvent({
@@ -157,4 +159,87 @@ test('event prefix and short name remain separate and can be updated without cha
   assert.deepEqual(s.stored.projection, projection);
   s.apply({ action: 'settings', status: 'live', prefix: '' });
   assert.equal(s.stored.event.prefix, '');
+});
+
+test('director can set current round and break state without changing score projections', () => {
+  const s = setup();
+  const projection = structuredClone(s.stored.projection);
+  s.apply({ action: 'round-control', round: 2, phase: 'playing' });
+  assert.equal(s.stored.event.currentRound, 2);
+  assert.equal(s.stored.event.roundPhase, 'playing');
+  s.apply({ action: 'round-control', round: 2, phase: 'break' });
+  assert.equal(s.stored.event.roundPhase, 'break');
+  assert.deepEqual(s.stored.projection, projection);
+  assert.throws(() => s.apply({ action: 'round-control', round: 4, phase: 'playing' }), /範圍/);
+  s.apply({ action: 'round-control', round: 0, phase: 'playing' });
+  assert.equal(s.stored.event.currentRound, 0);
+});
+
+test('Swiss unassigned rounds cannot be selected as current and invalid changes are atomic', () => {
+  const s = setup();
+  s.apply({ action: 'movement', csv: first });
+  const before = structuredClone(s.stored);
+  assert.throws(() => s.apply({ action: 'round-control', round: 2, phase: 'playing' }), /安排/);
+  assert.deepEqual(s.stored, before);
+});
+
+test('round timing requires a valid interval, preserves other rounds and supports clearing', () => {
+  const s = setup();
+  const timing = { startAt: '2026-10-14T10:00:00+08:00', endAt: '2026-10-14T10:30:00+08:00' };
+  s.apply({ action: 'round-timing', round: 1, ...timing });
+  s.apply({ action: 'round-timing', round: 2, ...timing });
+  assert.deepEqual(s.stored.event.roundTimes?.[1], timing);
+  const before = structuredClone(s.stored);
+  assert.throws(
+    () => s.apply({ action: 'round-timing', round: 2, ...timing, endAt: timing.startAt }),
+    /晚於/,
+  );
+  assert.throws(
+    () => s.apply({ action: 'round-timing', round: 2, ...timing, endAt: null }),
+    /一起/,
+  );
+  assert.deepEqual(s.stored, before);
+  s.apply({ action: 'round-timing', round: 2, startAt: null, endAt: null });
+  assert.equal(s.stored.event.roundTimes?.[2], undefined);
+  assert.deepEqual(s.stored.event.roundTimes?.[1], timing);
+  assert.equal(
+    mutationSchema.safeParse({
+      action: 'round-timing',
+      round: 1,
+      startAt: 'invalid',
+      endAt: null,
+      revision: 1,
+      reason: '測試',
+      requestId: '11111111-1111-4111-8111-111111111111',
+    }).success,
+    false,
+  );
+});
+
+test('dashboard counts only current round, includes handled cancellations and reports all slowest ties', () => {
+  const s = setup();
+  assert.deepEqual(roundProgress(s.stored.event), {
+    round: 0,
+    received: 0,
+    expected: 0,
+    slowest: [],
+  });
+  s.apply({ action: 'round-control', round: 1, phase: 'playing' });
+  assert.equal(roundProgress(s.stored.event).slowest.length, 2);
+  const firstTable = s.stored.event.assignments.find((a) => a.round === 1)!;
+  s.apply({ action: 'ruling', assignmentId: firstTable.id, board: 1, cancelled: true });
+  const second = s.stored.event.assignments.find((a) => a.round === 2)!;
+  s.apply({ action: 'ruling', assignmentId: second.id, board: 3, cancelled: true });
+  const progress = roundProgress(s.stored.event);
+  assert.equal(progress.received, 1);
+  assert.equal(progress.expected, 4);
+  assert.equal(progress.slowest.length, 1);
+  assert.notEqual(progress.slowest[0].assignment.id, firstTable.id);
+  for (const a of s.stored.event.assignments.filter((a) => a.round === 1)) {
+    for (const board of a.boards)
+      s.apply({ action: 'ruling', assignmentId: a.id, board, cancelled: true });
+  }
+  const complete = roundProgress(s.stored.event);
+  assert.equal(complete.received, 4);
+  assert.equal(complete.slowest.length, 0);
 });

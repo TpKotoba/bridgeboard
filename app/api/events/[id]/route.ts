@@ -30,7 +30,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       !(await isDirector())
     )
       throw new DomainError('修改賽事名稱與前綴僅限裁判', 403);
-    if (['pbn', 'movement', 'board-publication'].includes(command.action) && !(await isDirector()))
+    if (
+      ['pbn', 'movement', 'board-publication', 'round-control', 'round-timing'].includes(
+        command.action,
+      ) &&
+      !(await isDirector())
+    )
       throw new DomainError('此操作僅限裁判', 403);
     const stored = await mutateEvent((await params).id, command);
     return NextResponse.json(

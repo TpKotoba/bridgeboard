@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { boardGroups, boardRange } from '@/lib/board-groups';
+import { roundProgress } from '@/lib/round-progress';
 import {
   Activity,
   ArrowDownToLine,
@@ -99,6 +100,14 @@ function hasDeal(b: PublicEvent['boards'][number]): b is Board {
 }
 function number(n: number | null, places = 2) {
   return n === null ? '—' : n.toFixed(places);
+}
+function taipeiDateInput(value?: string) {
+  return value
+    ? new Date(value)
+        .toLocaleString('sv-SE', { timeZone: 'Asia/Taipei', hour12: false })
+        .slice(0, 16)
+        .replace(' ', 'T')
+    : '';
 }
 function signed(n: number) {
   return n > 0 ? `+${n}` : String(n);
@@ -213,6 +222,22 @@ export default function Scoreboard() {
   const [sessionExpanded, setSessionExpanded] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showEvents, setShowEvents] = useState(false);
+  const [eventsCollapsed, setEventsCollapsed] = useState(false);
+  const [dashboardCollapsed, setDashboardCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setEventsCollapsed(localStorage.getItem('bridge-events-collapsed') === 'true');
+      setDashboardCollapsed(localStorage.getItem('bridge-dashboard-collapsed') === 'true');
+    } catch {}
+  }, []);
+  function toggleSection(section: 'events' | 'dashboard') {
+    const next = section === 'events' ? !eventsCollapsed : !dashboardCollapsed;
+    if (section === 'events') setEventsCollapsed(next);
+    else setDashboardCollapsed(next);
+    try {
+      localStorage.setItem(`bridge-${section}-collapsed`, String(next));
+    } catch {}
+  }
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(''), 5000);
@@ -363,6 +388,8 @@ export default function Scoreboard() {
     }
   }
   const name = (pid: string) => event?.participants.find((p) => p.id === pid)?.name ?? pid;
+  const currentProgress = event ? roundProgress(event) : null;
+  const currentTiming = event?.roundTimes?.[event.currentRound ?? 0];
   const playerId = person || event?.participants[0]?.id;
   let playerBand = 0;
   const playerRows = (event?.assignments ?? [])
@@ -513,7 +540,8 @@ export default function Scoreboard() {
                   aria-controls="session-logout"
                   onClick={() => setSessionExpanded((expanded) => !expanded)}
                 >
-                  {!sessionExpanded && '登入身分：'}{director ? '裁判' : '賽務'}
+                  {!sessionExpanded && '登入身分：'}
+                  {director ? '裁判' : '賽務'}
                 </button>
                 <button
                   id="session-logout"
@@ -539,18 +567,18 @@ export default function Scoreboard() {
           </div>
         </header>
         <main>
-            <div className="page-heading">
-              <div>
-                <h1>橋藝競賽記分板</h1>
-                <p>還在用過時的 Excel 試算表舉辦比賽嗎？</p>
-              </div>
-              {admin && (
-                <button className="button subtle admin-menu-button" onClick={openAdmin}>
-                  <Settings2 size={16} />
-                  {director ? '裁判功能表' : '賽務功能表'}
-                </button>
-              )}
+          <div className="page-heading">
+            <div>
+              <h1>橋藝競賽記分板</h1>
+              <p>還在用過時的 Excel 試算表舉辦比賽嗎？</p>
             </div>
+            {admin && (
+              <button className="button subtle admin-menu-button" onClick={openAdmin}>
+                <Settings2 size={16} />
+                {director ? '裁判功能表' : '賽務功能表'}
+              </button>
+            )}
+          </div>
           {error && (
             <div className="alert error" role="alert">
               {error}
@@ -572,7 +600,20 @@ export default function Scoreboard() {
             </div>
           ) : (
             <>
-              <div className={`event-strip ${events.length > 3 ? 'compact-event-strip' : ''}`}>
+              <button
+                className="section-collapse"
+                aria-expanded={!eventsCollapsed}
+                aria-controls="event-switcher"
+                onClick={() => toggleSection('events')}
+              >
+                <span>切換比賽</span>
+                <ChevronDown size={15} className={eventsCollapsed ? 'collapsed' : ''} />
+              </button>
+              <div
+                id="event-switcher"
+                hidden={eventsCollapsed}
+                className={`event-strip ${events.length > 3 ? 'compact-event-strip' : ''}`}
+              >
                 {(events.length > 3 ? events.slice(0, 2) : events).map((e) => (
                   <button
                     key={e.id}
@@ -601,8 +642,13 @@ export default function Scoreboard() {
                 ))}
                 {events.length > 3 && (
                   <button className="event-option more-events" onClick={() => setShowEvents(true)}>
-                    <span className="event-icon more-events-icon"><LayoutDashboard size={20} /></span>
-                    <span><strong>顯示更多比賽</strong><small>還有 {events.length - 2} 場賽事，查看完整列表</small></span>
+                    <span className="event-icon more-events-icon">
+                      <LayoutDashboard size={20} />
+                    </span>
+                    <span>
+                      <strong>顯示更多比賽</strong>
+                      <small>還有 {events.length - 2} 場賽事，查看完整列表</small>
+                    </span>
                     <ChevronRight size={18} className="more-events-arrow" />
                   </button>
                 )}
@@ -629,16 +675,26 @@ export default function Scoreboard() {
                     <div className="event-intro">
                       <div className="section-kicker">NOW IN THE SPOTLIGHT</div>
                       <h2>
-                        <button className="event-title-button" popoverTarget="event-information" onClick={(e) => positionDetail(e.currentTarget)} aria-label="查看比賽資訊">
-                        {event.name.split(/\s+/).map((part, index) => (
-                          <span className="event-name-part" key={index}>
-                            {index > 0 ? ' ' : ''}
-                            {part}
-                          </span>
-                        ))}
+                        <button
+                          className="event-title-button"
+                          popoverTarget="event-information"
+                          onClick={(e) => positionDetail(e.currentTarget)}
+                          aria-label="查看比賽資訊"
+                        >
+                          {event.name.split(/\s+/).map((part, index) => (
+                            <span className="event-name-part" key={index}>
+                              {index > 0 ? ' ' : ''}
+                              {part}
+                            </span>
+                          ))}
                         </button>
                       </h2>
-                      <div id="event-information" key={event.id} popover="auto" className="player-detail-popover event-information">
+                      <div
+                        id="event-information"
+                        key={event.id}
+                        popover="auto"
+                        className="player-detail-popover event-information"
+                      >
                         <strong>{[event.prefix, event.name].filter(Boolean).join(' ')}</strong>
                         <div>日期：{event.date}</div>
                         <div>地點：{event.venue || '線上記分'}</div>
@@ -668,30 +724,104 @@ export default function Scoreboard() {
                         : '可在後台試填；正式比賽請裁判建立新賽事。'}
                     </div>
                   )}
-                  <div className="stats-grid">
+                  <button
+                    className="section-collapse"
+                    aria-expanded={!dashboardCollapsed}
+                    aria-controls="event-dashboard"
+                    onClick={() => toggleSection('dashboard')}
+                  >
+                    <span>
+                      比賽進度
+                      {dashboardCollapsed &&
+                        (event.status === 'finished'
+                          ? ' · 賽事已結束'
+                          : event.currentRound
+                            ? ` · 第 ${event.currentRound}/${event.rounds} 圈${event.roundPhase === 'break' ? ' · 圈間休息' : ''}`
+                            : ' · 尚未開始')}
+                    </span>
+                    <ChevronDown size={15} className={dashboardCollapsed ? 'collapsed' : ''} />
+                  </button>
+                  <div id="event-dashboard" className="stats-grid" hidden={dashboardCollapsed}>
                     <Stat
                       label={event.kind === 'teams' ? '參賽隊伍' : '參賽搭檔'}
                       value={event.participants.length}
                       suffix={event.kind === 'teams' ? '隊' : '對'}
                       icon={<Users />}
                     />
-                    <Stat label="賽程輪次" value={event.rounds} suffix="輪" icon={<Flag />} />
+                    <Stat
+                      label="目前圈數"
+                      value={event.currentRound ?? 0}
+                      suffix={`/ ${event.rounds} 圈`}
+                      detail={event.status === 'finished' ? '賽事已結束' : !event.currentRound ? '尚未開始' : event.roundPhase === 'break' ? '圈間休息' : undefined}
+                      icon={<Flag />}
+                      popoverTarget="current-round-information"
+                      onClick={(e) => positionDetail(e.currentTarget)}
+                    />
                     <Stat
                       label="比賽牌數"
                       value={event.boards.length}
                       suffix="副"
                       icon={<Spade />}
+                      detail={`每圈 ${event.boardsPerRound} 牌`}
                     />
                     <Stat
-                      label="已收成績"
-                      value={event.projection.received}
-                      suffix={`/ ${event.projection.expected}`}
+                      label="本圈已收成績"
+                      value={currentProgress?.received ?? 0}
+                      suffix={`/ ${currentProgress?.expected ?? 0}`}
                       progress={
-                        event.projection.expected
-                          ? event.projection.received / event.projection.expected
+                        currentProgress?.expected
+                          ? currentProgress.received / currentProgress.expected
                           : 0
                       }
+                      popoverTarget="current-round-progress"
+                      onClick={(e) => positionDetail(e.currentTarget)}
                     />
+                  </div>
+                  <div
+                    id="current-round-information"
+                    key={`time-${event.id}-${event.currentRound}`}
+                    popover="auto"
+                    className="player-detail-popover"
+                  >
+                    <strong>
+                      {event.currentRound
+                        ? `第 ${event.currentRound} 圈${event.roundPhase === 'break' ? ' · 圈間休息' : ''}`
+                        : '裁判尚未指定目前圈數'}
+                    </strong>
+                    <div>
+                      {currentTiming
+                        ? `${new Date(currentTiming.startAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })} — ${new Date(currentTiming.endAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })}（臺灣時間）`
+                        : '尚未設定本圈時間區間'}
+                    </div>
+                  </div>
+                  <div
+                    id="current-round-progress"
+                    key={`progress-${event.id}-${event.currentRound}`}
+                    popover="auto"
+                    className="player-detail-popover"
+                  >
+                    {!currentProgress?.round ? (
+                      '尚未指定目前圈數'
+                    ) : !currentProgress.expected ? (
+                      '本圈尚未安排賽程'
+                    ) : currentProgress.slowest.length === 0 ? (
+                      '本圈成績已收齊'
+                    ) : (
+                      <>
+                        <strong>本圈進度最慢桌</strong>
+                        {currentProgress.slowest.map(({ assignment, received, expected }) => (
+                          <div key={assignment.id}>
+                            桌 {assignment.table}
+                            {assignment.room === 'open'
+                              ? ' · 開室'
+                              : assignment.room === 'closed'
+                                ? ' · 閉室'
+                                : ''}
+                            ：{received} / {expected}
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </div>
                   <div className="mobile-tabs">
                     {navItems.map(([key, label]) => (
@@ -1621,18 +1751,23 @@ export default function Scoreboard() {
             <label className="field">
               裁判／賽務密碼
               <span className="password-input">
-              <input
-                autoFocus
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <button type="button" className="password-toggle" aria-label={showPassword ? '隱藏密碼' : '顯示密碼'} aria-pressed={showPassword}
-                onClick={() => setShowPassword((visible) => !visible)}>
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
+                <input
+                  autoFocus
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  aria-label={showPassword ? '隱藏密碼' : '顯示密碼'}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </span>
             </label>
             {loginError && (
@@ -1691,15 +1826,21 @@ function Stat({
   suffix,
   icon,
   progress,
+  popoverTarget,
+  onClick,
+  detail,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   suffix: string;
   icon?: React.ReactNode;
   progress?: number;
+  popoverTarget?: string;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
+  detail?: string;
 }) {
-  return (
-    <div className="stat-card">
+  const content = (
+    <>
       <div className="stat-top">
         <span>{label}</span>
         {icon ?? <Activity size={18} />}
@@ -1708,14 +1849,21 @@ function Stat({
         {value}
         <small>{suffix}</small>
       </div>
-      {progress !== undefined ? (
+      {detail ? <div className="stat-detail">{detail}</div> : progress !== undefined ? (
         <div className="progress-track">
           <span style={{ width: `${progress * 100}%` }} />
         </div>
       ) : (
         <div className="stat-line" />
       )}
-    </div>
+    </>
+  );
+  return popoverTarget ? (
+    <button className="stat-card interactive-stat" popoverTarget={popoverTarget} onClick={onClick}>
+      {content}
+    </button>
+  ) : (
+    <div className="stat-card">{content}</div>
   );
 }
 function RoundSelect({
@@ -2014,6 +2162,7 @@ function AdminPanel({
     [text, setText] = useState(''),
     [preview, setPreview] = useState('');
   const [deleteName, setDeleteName] = useState('');
+  const [timingRound, setTimingRound] = useState(1);
   const load = useCallback(async () => {
     const e = await api<AdminEvent>(`/api/admin/events/${eventId}`, { cache: 'no-store' });
     setEvent(e);
@@ -2026,6 +2175,7 @@ function AdminPanel({
       .then((e) => {
         if (alive) {
           setRound(e.assignments[0].round);
+          setTimingRound(e.currentRound || 1);
           setAssignment(e.assignments[0].id);
           setBoard(e.assignments[0].boards[0]);
         }
@@ -2157,6 +2307,7 @@ function AdminPanel({
       <div className="admin-tabs">
         {[
           ['score', '收分／更正'],
+          ...(event.canDirect ? [['round-progress', '圈次進度']] : []),
           ...(event.canDirect ? [['import', '匯入／匯出']] : []),
           ['publish', event.canDirect ? '發布設定' : '賽事設定'],
           ['penalty', '判罰調整'],
@@ -2175,6 +2326,114 @@ function AdminPanel({
         ))}
       </div>
       <div className="admin-content">
+        {section === 'round-progress' && event.canDirect && (
+          <>
+            <form
+              className="round-settings-form"
+              key={`current-${event.currentRound}-${event.roundPhase}`}
+              onSubmit={(e) => {
+                e.preventDefault();
+                const form = new FormData(e.currentTarget);
+                void save({
+                  action: 'round-control',
+                  round: Number(form.get('round')),
+                  phase: String(form.get('phase')),
+                  reason: '裁判指定目前圈數與比賽進度',
+                });
+              }}
+            >
+              <h4>目前打到哪一圈</h4>
+              <div className="form-grid">
+                <label className="field">
+                  目前圈數
+                  <select name="round" defaultValue={event.currentRound ?? 0}>
+                    <option value="0">尚未開始</option>
+                    {Array.from({ length: event.rounds }, (_, i) => (
+                      <option
+                        key={i}
+                        value={i + 1}
+                        disabled={!event.assignments.some((a) => a.round === i + 1)}
+                      >
+                        第 {i + 1} 圈
+                        {!event.assignments.some((a) => a.round === i + 1) ? '（尚未安排）' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  進度狀態
+                  <select name="phase" defaultValue={event.roundPhase ?? 'playing'}>
+                    <option value="playing">進行中</option>
+                    <option value="break">圈間休息</option>
+                  </select>
+                </label>
+              </div>
+              <p className="footnote">這裡設定觀眾看到的圈數與進度；成績更正仍由後台操作。</p>
+              <button className="button primary" disabled={busy || event.status === 'finished'}>
+                儲存目前圈數
+              </button>
+              {event.status === 'finished' && (
+                <p className="footnote">賽事已結束；重新開放後才可調整目前圈數。</p>
+              )}
+            </form>
+            <form
+              className="round-settings-form"
+              key={`timing-${timingRound}-${JSON.stringify(event.roundTimes?.[timingRound])}`}
+              onSubmit={(e) => {
+                e.preventDefault();
+                const form = new FormData(e.currentTarget);
+                const start = String(form.get('startAt') ?? ''),
+                  end = String(form.get('endAt') ?? '');
+                void save({
+                  action: 'round-timing',
+                  round: timingRound,
+                  startAt: start ? new Date(`${start}+08:00`).toISOString() : null,
+                  endAt: end ? new Date(`${end}+08:00`).toISOString() : null,
+                  reason: `設定第 ${timingRound} 圈時間區間`,
+                });
+              }}
+            >
+              <h4>各圈時間區間</h4>
+              <label className="field">
+                設定圈次
+                <select
+                  value={timingRound}
+                  onChange={(e) => setTimingRound(Number(e.target.value))}
+                >
+                  {Array.from({ length: event.rounds }, (_, i) => (
+                    <option key={i} value={i + 1}>
+                      第 {i + 1} 圈
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="form-grid">
+                <label className="field">
+                  開始時間（臺灣時間）
+                  <input
+                    type="datetime-local"
+                    name="startAt"
+                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.startAt)}
+                  />
+                </label>
+                <label className="field">
+                  預定結束時間（臺灣時間）
+                  <input
+                    type="datetime-local"
+                    name="endAt"
+                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.endAt)}
+                  />
+                </label>
+              </div>
+              <p className="footnote">
+                開始與結束需一起填寫；兩欄清空後儲存，可清除本圈時間。時間不會自動切換圈次。
+              </p>
+              <button className="button subtle" disabled={busy}>
+                儲存時間區間
+              </button>
+            </form>
+          </>
+        )}
         {error && (
           <div className="alert error" role="alert">
             {error}

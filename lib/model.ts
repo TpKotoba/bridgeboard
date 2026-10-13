@@ -65,6 +65,9 @@ export type BridgeEvent = {
   boardsPerRound: number;
   awardPlaces?: number;
   movementImported?: boolean;
+  currentRound?: number;
+  roundPhase?: 'playing' | 'break';
+  roundTimes?: Record<number, { startAt: string; endAt: string }>;
   status: 'live' | 'finished';
   publishBoards: boolean;
   pairMethod?: PairMethod;
@@ -110,6 +113,27 @@ export const createSchema = z
       ctx.addIssue({ code: 'custom', message: '每場最多 128 副' });
   });
 export const mutationSchema = z.discriminatedUnion('action', [
+  z
+    .object({
+      action: z.literal('round-control'),
+      revision: z.number().int().min(1),
+      requestId: z.string().uuid(),
+      reason: z.string().trim().min(2).max(200),
+      round: z.number().int().min(0).max(15),
+      phase: z.enum(['playing', 'break']),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal('round-timing'),
+      revision: z.number().int().min(1),
+      requestId: z.string().uuid(),
+      reason: z.string().trim().min(2).max(200),
+      round: z.number().int().min(1).max(15),
+      startAt: z.string().datetime({ offset: true }).nullable(),
+      endAt: z.string().datetime({ offset: true }).nullable(),
+    })
+    .strict(),
   z
     .object({
       action: z.literal('board-publication'),

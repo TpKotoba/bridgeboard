@@ -157,6 +157,29 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       changes.push({ key, before: e.results[key] ?? null, after });
       e.results[key] = after;
     }
+  } else if (command.action === 'round-control') {
+    if (e.status === 'finished') throw new DomainError('請先重新開放賽事');
+    if (command.round > e.rounds) throw new DomainError('圈數超過賽程範圍');
+    if (command.round > 0 && !e.assignments.some((a) => a.round === command.round))
+      throw new DomainError('請先安排這一圈的賽程');
+    detail = `${e.currentRound ?? 0} → ${command.round}；${command.phase === 'break' ? '圈間休息' : '進行中'}`;
+    e.currentRound = command.round;
+    e.roundPhase = command.phase;
+  } else if (command.action === 'round-timing') {
+    if (command.round > e.rounds) throw new DomainError('圈數超過賽程範圍');
+    if ((command.startAt === null) !== (command.endAt === null))
+      throw new DomainError('開始與結束時間需一起填寫或一起清除');
+    if (
+      command.startAt &&
+      command.endAt &&
+      Date.parse(command.endAt) <= Date.parse(command.startAt)
+    )
+      throw new DomainError('結束時間必須晚於開始時間');
+    e.roundTimes ??= {};
+    if (command.startAt && command.endAt)
+      e.roundTimes[command.round] = { startAt: command.startAt, endAt: command.endAt };
+    else delete e.roundTimes[command.round];
+    detail = `第 ${command.round} 圈：${command.startAt ?? '未設定'} — ${command.endAt ?? '未設定'}`;
   } else if (command.action === 'settings') {
     if (
       command.status === 'finished' &&
@@ -313,6 +336,8 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       pbn: '匯入牌型',
       movement: '匯入 movement',
       'board-publication': '逐副公開設定',
+      'round-control': '設定目前圈數',
+      'round-timing': '設定圈次時間',
       ruling: '裁判取消／恢復',
       penalty: '裁判 Penalty',
     }[command.action],
