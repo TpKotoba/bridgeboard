@@ -1,6 +1,20 @@
 import type { Board, Seat } from './model';
 import { strains } from './play';
 
+export function highestParContract(contracts: string[]) {
+  const rank = (contract: string) => {
+    const match = contract.match(/^([1-7])(NT|[CDHSN])/);
+    return match
+      ? Number(match[1]) * 5 + ['C', 'D', 'H', 'S', 'N'].indexOf(match[2].replace('NT', 'N'))
+      : -1;
+  };
+  const highest = contracts.reduce<string | undefined>(
+    (best, contract) => (best === undefined || rank(contract) > rank(best) ? contract : best),
+    undefined,
+  );
+  return highest ? formatParContract(highest) : 'Pass out';
+}
+
 export function formatParContract(contract: string) {
   const match = contract.match(/^([1-7](?:NT|[CDHSN]))(\*{1,2}|X{1,2})?-([NESW]{1,2})([+-]\d+)?$/);
   if (!match) return contract;

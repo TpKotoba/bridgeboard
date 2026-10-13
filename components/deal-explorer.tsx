@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Undo2, X } from 'lucide-react';
 import type { Board, Result, Seat } from '@/lib/model';
 import { seats } from '@/lib/model';
-import { formatParContract, highCardPoints, lawOfTotalTricks } from '@/lib/deal-analysis';
+import { highestParContract, highCardPoints, lawOfTotalTricks } from '@/lib/deal-analysis';
 import {
   initialPlay,
   bestDeclarerTricks,
@@ -234,9 +234,7 @@ export function DealExplorer({
           {analysis || tableSelected ? (
             <>
               <strong className={tableSelected ? 'your-contract' : undefined}>
-                {tableSelected
-                  ? actualContract
-                  : analysis!.par.contracts.map(formatParContract).join(' · ') || 'Pass out'}
+                {tableSelected ? actualContract : highestParContract(analysis!.par.contracts)}
                 {tableSelected && result?.status !== 'cancelled' && contractDelta !== null && (
                   <span className="contract-outcome">
                     {' / '}
@@ -255,7 +253,7 @@ export function DealExplorer({
               )}
               {tableSelected && analysis && (
                 <small className="par-reference">
-                  Par: {analysis.par.contracts.map(formatParContract).join(' · ') || 'Pass out'}
+                  Par: {highestParContract(analysis.par.contracts)}
                 </small>
               )}
               {lott && !tableSelected && (
