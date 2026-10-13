@@ -282,6 +282,55 @@ small {
   margin: 0 0 27px;
   gap: 20px;
 }
+.session-control {
+  display: flex;
+  align-items: stretch;
+  width: 56px;
+  height: 32px;
+  border-radius: 12px;
+  background: #edf1eb;
+  overflow: hidden;
+  transition: width 180ms ease;
+}
+.session-control.expanded { width: 120px; }
+.session-role {
+  flex: 0 0 56px;
+  border: 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 400;
+  color: #65766b;
+  background: transparent;
+  border-radius: 12px;
+  padding: 5px 12px;
+}
+.session-logout {
+  flex: 0 0 64px;
+  border: 0;
+  border-radius: 12px;
+  background: #27332f;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  visibility: hidden;
+}
+.session-control.expanded .session-logout { visibility: visible; }
+.session-logout:hover { background: #18231e; }
+@media (prefers-reduced-motion: reduce) {
+  .session-control { transition: none; }
+}
+.page-heading {
+  position: relative;
+}
+.page-heading > .admin-menu-button {
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+.page-heading > div {
+  min-width: 0;
+}
 .eyebrow {
   color: #92968c;
   letter-spacing: 2.5px;
@@ -1676,6 +1725,61 @@ select {
 .participant-picker select:hover {
   border-color: #294b3e;
 }
+.participant-picker-trigger {
+  display: grid;
+  grid-template-columns: 3em minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 8px;
+  width: 260px;
+  max-width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  text-align: left;
+  background: white;
+  border: 1px solid #84918a;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+}
+.participant-options {
+  width: 280px;
+  max-height: min(360px, 65vh);
+  overflow-y: auto;
+}
+.participant-options button {
+  display: grid;
+  grid-template-columns: 3em minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 10px 8px;
+  font: inherit;
+  text-align: left;
+}
+.participant-options button:hover,
+.participant-options button[aria-pressed='true'] {
+  background: #e8f0ea;
+}
+.import-export-section + .import-export-section {
+  border-top: 1px solid #dfe4dc;
+  margin-top: 24px;
+  padding-top: 20px;
+}
+.import-export-section h4 {
+  margin-bottom: 8px;
+}
+.import-export-section > .button {
+  margin-bottom: 16px;
+}
+@media (max-width: 640px) {
+  .participant-picker-trigger {
+    flex: 1;
+    min-width: 180px;
+  }
+}
 .player-results .player-points {
   text-align: right;
   font-variant-numeric: lining-nums tabular-nums;
@@ -2803,6 +2907,7 @@ table th[aria-sort='descending'] > button {
   grid-column: 2;
   grid-row: 3;
   align-self: start;
+  margin-right: 12px;
 }
 .event-heading .event-meta {
   grid-column: 1;
@@ -2830,6 +2935,19 @@ table th[aria-sort='descending'] > button {
   white-space: nowrap;
   padding: 8px 10px;
   font-size: 12px;
+}
+.top-actions .logout-button {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font-weight: 400;
+  color: #65766b;
+  padding: 8px 6px;
+}
+.top-actions .logout-button:hover {
+  color: #294b3e;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .board-jump label {
   display: flex;

@@ -154,15 +154,11 @@ export function parseMovement(text: string, e: BridgeEvent): Assignment[] {
       boards,
     });
   }
-  for (let round = 1; round <= e.rounds; round++)
+  for (const round of new Set(assignments.map((a) => a.round)))
     if (
       assignments.filter((a) => a.round === round).length !== Math.floor(e.participants.length / 2)
     )
       throw new Error(`第 ${round} 輪桌次不完整`);
-  if (e.boards.some((b) => !assignments.some((a) => a.boards.includes(b.number))))
-    throw new Error('有牌號未排入賽程');
-  if (e.boards.some((b) => assignments.filter((a) => a.boards.includes(b.number)).length < 2))
-    throw new Error('每副牌至少需兩桌結果才可比較 MP');
   return assignments;
 }
 export function parsePbn(text: string): Board[] {
@@ -187,8 +183,8 @@ export function parsePbn(text: string): Board[] {
     )
       throw new Error('PBN 牌號、發牌者或身價錯誤／重複');
     numbers.add(number);
-    if (group !== undefined && (!group.trim() || group.length > 40))
-      throw new Error(`牌 ${number} 的 BridgeboardGroup 必須為 1–40 字元`);
+    if (group !== undefined && !/^[A-Za-z0-9_-]{1,40}$/.test(group))
+      throw new Error(`牌 ${number} 的 BridgeboardGroup 須為 1–40 個英數字、底線或連字號`);
     const raw = tag('Deal')?.match(/^([NESW]):(.+)$/);
     if (!raw) throw new Error(`牌 ${number} 缺少完整 Deal`);
     const hands = raw[2].trim().split(/\s+/);
@@ -210,7 +206,13 @@ export function parsePbn(text: string): Board[] {
       deal[seats[(seats.indexOf(raw[1] as Seat) + i) % 4]] = cards;
     });
     if (new Set(Object.values(deal).flat()).size !== 52) throw new Error('牌型包含重複牌');
-    return { number, ...(group === undefined ? {} : { group: group.trim() }), dealer, vulnerability, deal };
+    return {
+      number,
+      ...(group === undefined ? {} : { group: group.trim() }),
+      dealer,
+      vulnerability,
+      deal,
+    };
   });
 }
 export function exportPbn(e: Pick<BridgeEvent, 'boards'>) {

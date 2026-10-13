@@ -12,7 +12,8 @@ import {
   Vulnerability,
 } from './model';
 import { contractScore, project } from './scoring';
-import { parsePbn, parseMovement } from './imports';
+import { boardGroups } from './board-groups';
+import { parsePbn, parseMovement, exportMovement } from './imports';
 const vulCycle: Vulnerability[] = [
   'None',
   'NS',
@@ -158,6 +159,11 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
   } else if (command.action === 'settings') {
     if (
       command.status === 'finished' &&
+      new Set(e.assignments.map((a) => a.round)).size !== e.rounds
+    )
+      throw new DomainError('尚有輪次未安排賽程，不能結束賽事。');
+    if (
+      command.status === 'finished' &&
       Object.keys(e.results).length !== e.assignments.reduce((n, a) => n + a.boards.length, 0)
     )
       throw new DomainError('還有未收齊的成績，不能結束賽事。');
@@ -172,6 +178,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     )
       throw new DomainError('有牌只剩一桌有效結果，無法比較；請裁判處理後再結束。');
     e.status = command.status;
+    if (command.awardPlaces !== undefined) e.awardPlaces = command.awardPlaces;
     if (command.publishBoards !== undefined && command.publishBoards !== e.publishBoards)
       throw new DomainError('請使用每副牌的公開開關。');
   } else if (command.action === 'board-publication') {
@@ -179,8 +186,9 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     e.boards = e.boards.map((b) => ({ ...b, published: b.published ?? e.publishBoards }));
     const b = e.boards.find((b) => b.number === command.board);
     if (!b) throw new DomainError('找不到牌號');
-    const group = b.group;
-    const targets = group ? e.boards.filter((board) => board.group === group) : [b];
+    const targets = boardGroups(e.boards, e.boardsPerRound).find((group) =>
+      group.some((board) => board.number === b.number),
+    )!;
     detail = `${targets.map((board) => `B${board.number}`).join('、')}: ${b.published ? '公開' : '隱藏'} → ${command.published ? '公開' : '隱藏'}`;
     for (const target of targets) target.published = command.published;
   } else if (command.action === 'penalty') {
@@ -233,15 +241,61 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       boards.some((b) => !e.boards.some((x) => x.number === b.number))
     )
       throw new DomainError('PBN 需包含賽事所有牌號，且不得包含額外牌號。');
+    const ordered = [...boards].sort((a, b) => a.number - b.number);
+    const explicitGroups = new Set(boards.map((b) => b.group).filter(Boolean));
+    let prefix = 'Auto';
+    while ([...explicitGroups].some((group) => group!.startsWith(`${prefix}-`))) prefix += '_';
     e.boards = boards.map((b) => ({
       ...b,
+      group:
+        b.group ??
+        `${prefix}-${Math.floor(ordered.findIndex((item) => item.number === b.number) / e.boardsPerRound) + 1}`,
       published: e.boards.find((old) => old.number === b.number)?.published ?? e.publishBoards,
     }));
+    for (const b of e.boards) {
+      if (e.boards.some((other) => other.group === b.group && !other.published))
+        b.published = false;
+    }
   } else {
-    if (Object.keys(e.results).length) throw new DomainError('已有成績時不可更換 movement。');
+    if (e.status === 'finished') throw new DomainError('請先重新開放賽事');
     if (e.kind !== 'pairs') throw new DomainError('Movement 匯入僅適用雙人賽。');
     try {
-      e.assignments = parseMovement(command.csv, e);
+      const incoming = parseMovement(command.csv, e);
+      const rounds = new Set(incoming.map((a) => a.round));
+      const scoredRounds = new Set(
+        e.assignments
+          .filter((a) => a.boards.some((b) => e.results[resultKey(a.id, b)]))
+          .map((a) => a.round),
+      );
+      for (const a of incoming) {
+        if (!scoredRounds.has(a.round)) continue;
+        const old = e.assignments.find(
+          (item) => item.round === a.round && String(item.table) === String(a.table),
+        );
+        if (
+          !old ||
+          old.ns !== a.ns ||
+          old.ew !== a.ew ||
+          [...old.boards].sort((x, y) => x - y).join(',') !==
+            [...a.boards].sort((x, y) => x - y).join(',')
+        )
+          throw new Error(`第 ${a.round} 輪已有成績，不可改動其賽程`);
+        a.id = old.id;
+        a.matchId = old.matchId;
+      }
+      const combined = [
+        ...e.assignments.filter(
+          (a) => !rounds.has(a.round) && (e.movementImported || scoredRounds.has(a.round)),
+        ),
+        ...incoming,
+      ];
+      parseMovement(exportMovement({ ...e, assignments: combined }), e);
+      e.assignments = combined.sort(
+        (a, b) =>
+          a.round - b.round ||
+          String(a.table).localeCompare(String(b.table), 'en', { numeric: true }),
+      );
+      e.movementImported = true;
     } catch (error) {
       throw new DomainError((error as Error).message);
     }

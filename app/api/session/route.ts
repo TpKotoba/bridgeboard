@@ -34,7 +34,10 @@ export async function POST(request: Request) {
       await new Promise((r) => setTimeout(r, 800));
       throw new DomainError('密碼不正確', 401);
     }
-    const res = NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
+    const res = NextResponse.json(
+      { ok: true, director: role === 'director' },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
     res.cookies.set('bridge_admin', issueSession(role!), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

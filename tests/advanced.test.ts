@@ -196,9 +196,12 @@ test('CrossIMP averages pairwise IMPs and Butler uses a rounded arithmetic datum
   assert.equal(impPairScore(420, [420, 170, -50], 0, 'butler', 'one').datum, 170);
   assert.equal(impPairScore(420, [420, -1000, 170, 500], 0, 'crossimp', 'one').value, 6);
 });
-test('one board publication never exposes another board and legacy states remain readable', () => {
+test('separate explicit publication groups stay isolated and legacy states remain readable', () => {
   const e = event(),
     s = { event: e, projection: project(e), requests: [] };
+  e.boards.forEach((b) => {
+    b.group = `Board-${b.number}`;
+  });
   const n = applyMutation(s, { ...meta, action: 'board-publication', board: 1, published: true });
   const visible = publicBoards(n.event);
   assert.ok('deal' in visible[0]);

@@ -24,7 +24,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     await requireAdmin(request);
     const command = mutationSchema.parse(await readJson(request));
-    if ((command.action === 'ruling' || command.action === 'penalty') && !(await isDirector()))
+    if (['pbn', 'movement', 'board-publication'].includes(command.action) && !(await isDirector()))
       throw new DomainError('此操作僅限裁判', 403);
     const stored = await mutateEvent((await params).id, command);
     return NextResponse.json(

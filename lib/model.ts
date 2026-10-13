@@ -62,6 +62,8 @@ export type BridgeEvent = {
   venue: string;
   rounds: number;
   boardsPerRound: number;
+  awardPlaces?: number;
+  movementImported?: boolean;
   status: 'live' | 'finished';
   publishBoards: boolean;
   pairMethod?: PairMethod;
@@ -155,6 +157,7 @@ export const mutationSchema = z.discriminatedUnion('action', [
       reason: z.string().trim().min(2).max(200),
       status: z.enum(['live', 'finished']),
       publishBoards: z.boolean().optional(),
+      awardPlaces: z.number().int().min(0).max(32).optional(),
     })
     .strict(),
   z

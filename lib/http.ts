@@ -4,7 +4,7 @@ import { DomainError } from './events';
 import { isAdmin } from './auth';
 export async function requireAdmin(request: Request) {
   checkOrigin(request);
-  if (!(await isAdmin())) throw new DomainError('請先登入主辦後台', 401);
+  if (!(await isAdmin())) throw new DomainError('請先登入裁判／賽務後台', 401);
 }
 export function checkOrigin(request: Request) {
   const origin = request.headers.get('origin');

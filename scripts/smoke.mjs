@@ -19,7 +19,7 @@ assert.equal(session.json.storage, 'local', 'Smoke tests only run against local 
 const noauth = await req('/api/events', 'POST', { name: 'test' }, false);
 assert.equal(noauth.response.status, 401);
 const login = await req('/api/session', 'POST', {
-  password: process.env.ADMIN_PASSWORD ?? 'local-bridge-admin-2026',
+  password: process.env.DIRECTOR_PASSWORD ?? 'local-bridge-director-2026',
 });
 assert.equal(login.response.status, 200);
 cookie = login.response.headers.get('set-cookie').split(';')[0];

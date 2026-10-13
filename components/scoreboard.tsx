@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { boardGroups, boardRange } from '@/lib/board-groups';
 import {
   Activity,
   ArrowDownToLine,
@@ -63,14 +64,14 @@ type EventSummary = {
   expected: number;
 };
 type Tab = 'standings' | 'rounds' | 'boards' | 'players' | 'admin';
-type AdminEvent = PublicEvent & { audit: Audit[]; canDirect?: boolean };
+type AdminEvent = PublicEvent & { audit?: Audit[]; canDirect?: boolean };
 const methodNames = { mp: 'MP', crossimp: 'CrossIMP', butler: 'ButlerIMP' };
 function pairValue(value: number | null | undefined, top: number, method = 'mp') {
   return value == null
     ? '—'
     : method === 'mp'
       ? `${number(top ? (value / top) * 100 : null)}%`
-      : `${value >= 0 ? '+' : ''}${number(value)}`;
+      : `${value >= 0 ? '+' : ''}${number(value, method === 'butler' ? 0 : 2)}`;
 }
 const suitSymbols: Record<string, string> = { S: '♠', H: '♥', D: '♦', C: '♣', NT: 'NT' };
 function pairTone(value: number | null | undefined, top: number, method: string) {
@@ -204,6 +205,8 @@ export default function Scoreboard() {
     [admin, setAdmin] = useState(false),
     [configured, setConfigured] = useState(false),
     [mode, setMode] = useState('demo');
+  const [director, setDirector] = useState(false);
+  const [sessionExpanded, setSessionExpanded] = useState(false);
   const [showLogin, setShowLogin] = useState(false),
     [showCreate, setShowCreate] = useState(false),
     [password, setPassword] = useState(''),
@@ -220,10 +223,13 @@ export default function Scoreboard() {
   useEffect(() => {
     Promise.all([
       refreshList(),
-      api<{ admin: boolean; configured: boolean; storage: string }>('/api/session'),
+      api<{ admin: boolean; director: boolean; configured: boolean; storage: string }>(
+        '/api/session',
+      ),
     ])
       .then(([list, session]) => {
         setAdmin(session.admin);
+        setDirector(session.director);
         setConfigured(session.configured);
         setMode(session.storage);
         const params = new URLSearchParams(location.search),
@@ -319,6 +325,7 @@ export default function Scoreboard() {
   }
   function openAdmin() {
     if (!admin) setShowLogin(true);
+    else if (!id && director) setShowCreate(true);
     else setTab('admin');
   }
   async function login(e: React.FormEvent) {
@@ -326,11 +333,16 @@ export default function Scoreboard() {
     setLoggingIn(true);
     setLoginError('');
     try {
-      await api('/api/session', { method: 'POST', body: JSON.stringify({ password }) });
+      const session = await api<{ director: boolean }>('/api/session', {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      });
       setAdmin(true);
+      setDirector(session.director);
       setPassword('');
       setShowLogin(false);
       setTab('admin');
+      if (!id && session.director) setShowCreate(true);
     } catch (e) {
       setLoginError((e as Error).message);
     } finally {
@@ -344,10 +356,9 @@ export default function Scoreboard() {
     .filter((a) => a.ns === playerId || a.ew === playerId)
     .flatMap((a) => a.boards.map((b) => ({ a, b })))
     .sort((left, right) => {
-      if (playerSort === 'board')
-        return left.b - right.b || left.a.round - right.a.round;
+      if (playerSort === 'board') return left.b - right.b || left.a.round - right.a.round;
       if (playerSort === 'opponent') {
-        const opponent = (a: typeof left.a) => a.ns === playerId ? a.ew : a.ns;
+        const opponent = (a: typeof left.a) => (a.ns === playerId ? a.ew : a.ns);
         const order = opponent(left.a).localeCompare(opponent(right.a), 'en', { numeric: true });
         if (order) return order;
       }
@@ -473,13 +484,35 @@ export default function Scoreboard() {
             <span>{event?.kind === 'pairs' ? '雙人賽' : '隊制賽'}</span>
           </div>
           <div className="top-actions">
-            <span className="online-indicator">
-              <i />
-              {mode === 'demo' ? '展示模式' : mode === 'local' ? '本機測試' : '雲端儲存'}
-            </span>
-            <button className="button subtle login-button" onClick={openAdmin}>
-              {admin ? '主辦後台' : '裁判登入'}
-            </button>
+            {admin ? (
+              <div className={`session-control ${sessionExpanded ? 'expanded' : ''}`}
+                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setSessionExpanded(false); }}
+                onKeyDown={(e) => { if (e.key === 'Escape') setSessionExpanded(false); }}>
+                <button className="session-role" aria-expanded={sessionExpanded} aria-controls="session-logout"
+                  onClick={() => setSessionExpanded((expanded) => !expanded)}>
+                  {director ? '裁判' : '賽務'}
+                </button>
+                <button
+                  id="session-logout"
+                  className="session-logout"
+                  tabIndex={sessionExpanded ? 0 : -1}
+                  aria-hidden={!sessionExpanded}
+                  onClick={async () => {
+                    await api('/api/session', { method: 'DELETE' });
+                    setSessionExpanded(false);
+                    setAdmin(false);
+                    setDirector(false);
+                    setTab('standings');
+                  }}
+                >
+                  登出
+                </button>
+              </div>
+            ) : (
+              <button className="button subtle login-button" onClick={openAdmin}>
+                登入
+              </button>
+            )}
           </div>
         </header>
         <main>
@@ -490,15 +523,9 @@ export default function Scoreboard() {
               <p>還在用過時的 Excel 試算表舉辦比賽嗎？</p>
             </div>
             {admin && (
-              <button
-                className="button primary"
-                onClick={() => {
-                  if (!admin) setShowLogin(true);
-                  else setShowCreate(true);
-                }}
-              >
-                <Plus size={17} />
-                建立賽事
+              <button className="button subtle admin-menu-button" onClick={openAdmin}>
+                <Settings2 size={16} />
+                {director ? '裁判功能表' : '賽務功能表'}
               </button>
             )}
           </div>
@@ -555,9 +582,9 @@ export default function Scoreboard() {
                 <div className="empty">
                   <Trophy size={36} />
                   <h2>準備好第一場比賽</h2>
-                  <p>登入主辦後台，建立隊制賽或雙人賽。</p>
+                  <p>由裁判建立隊制賽或雙人賽。</p>
                   <button className="button primary" onClick={openAdmin}>
-                    主辦登入
+                    {admin ? (director ? '建立賽事' : '賽務功能表') : '登入'}
                   </button>
                 </div>
               )}
@@ -607,7 +634,7 @@ export default function Scoreboard() {
                       <span>範例賽事</span> 使用模擬成績與牌型，供操作展示。
                       {mode === 'demo'
                         ? '目前為唯讀模式。'
-                        : '可在主辦後台試填；正式比賽請建立新賽事。'}
+                        : '可在後台試填；正式比賽請裁判建立新賽事。'}
                     </div>
                   )}
                   <div className="stats-grid">
@@ -703,7 +730,7 @@ export default function Scoreboard() {
                                 >
                                   <td>
                                     <span className={`rank rank-${s.rank}`}>
-                                      {s.rank < 4 ? (
+                                      {s.rank <= (event.awardPlaces ?? 3) ? (
                                         <>
                                           <Trophy size={13} />
                                           {s.rank}
@@ -741,7 +768,14 @@ export default function Scoreboard() {
                                       onClick={(e) => positionDetail(e.currentTarget)}
                                       aria-label={`查看 ${s.name} 總分明細`}
                                     >
-                                      {number(s.score)}
+                                      {number(
+                                        s.score,
+                                        pairMethod === 'butler' &&
+                                          event.kind === 'pairs' &&
+                                          Number.isInteger(s.score)
+                                          ? 0
+                                          : 2,
+                                      )}
                                       <small>
                                         {event.kind === 'pairs' && pairMethod === 'mp' ? '%' : ''}
                                       </small>
@@ -757,15 +791,27 @@ export default function Scoreboard() {
                                           : pairMethod === 'mp'
                                             ? '累計 MP'
                                             : '累計 IMP'}
-                                        ：{number(s.secondary)}
+                                        ：
+                                        {number(
+                                          s.secondary,
+                                          pairMethod === 'butler' && event.kind === 'pairs' ? 0 : 2,
+                                        )}
                                       </div>
                                       <div>
-                                        Penalty：{number(s.penalty ?? 0)}{' '}
+                                        調整{' '}
                                         {event.kind === 'teams'
                                           ? 'VP'
                                           : pairMethod === 'mp'
-                                            ? '百分點'
+                                            ? 'MP'
                                             : 'IMP'}
+                                        ：
+                                        {number(
+                                          s.penalty ?? 0,
+                                          pairMethod === 'butler' &&
+                                            Number.isInteger(s.penalty ?? 0)
+                                            ? 0
+                                            : 2,
+                                        )}
                                       </div>
                                     </div>
                                   </td>
@@ -878,7 +924,9 @@ export default function Scoreboard() {
                                   <tr key={a.id}>
                                     <td className="mono">{a.table}</td>
                                     {[a.ns, a.ew].map((id) => {
-                                      const standing = event.projection.standings.find((s) => s.id === id);
+                                      const standing = event.projection.standings.find(
+                                        (s) => s.id === id,
+                                      );
                                       const score = standing?.score;
                                       return (
                                         <td key={id}>
@@ -893,7 +941,9 @@ export default function Scoreboard() {
                                               {name(id)}
                                               <small className="round-pair-summary">
                                                 {id.toUpperCase()} /{' '}
-                                                {score == null ? '—' : `${pairMethod !== 'mp' && score >= 0 ? '+' : ''}${number(score)}${pairMethod === 'mp' ? '%' : ' IMP'}`}
+                                                {score == null
+                                                  ? '—'
+                                                  : `${pairMethod !== 'mp' && score >= 0 ? '+' : ''}${number(score, pairMethod === 'butler' && Number.isInteger(score) ? 0 : 2)}${pairMethod === 'mp' ? '%' : ' IMP'}`}
                                               </small>
                                             </span>
                                           </button>
@@ -909,7 +959,9 @@ export default function Scoreboard() {
                                         }}
                                       >
                                         {a.boards.length >= 3 &&
-                                        a.boards.every((b, i) => i === 0 || b === a.boards[i - 1] + 1)
+                                        a.boards.every(
+                                          (b, i) => i === 0 || b === a.boards[i - 1] + 1,
+                                        )
                                           ? `${a.boards[0]}-${a.boards[a.boards.length - 1]}`
                                           : a.boards.join(', ')}
                                       </button>
@@ -926,16 +978,23 @@ export default function Scoreboard() {
                             </tbody>
                           </table>
                           <div className="table-footer">
-                            輪空：
-                            {event.participants
-                              .filter(
-                                (p) =>
-                                  !event.assignments.some(
-                                    (a) => a.round === round && (a.ns === p.id || a.ew === p.id),
-                                  ),
-                              )
-                              .map((p) => p.name)
-                              .join('、') || '無'}
+                            {event.assignments.some((a) => a.round === round) ? (
+                              <>
+                                輪空：
+                                {event.participants
+                                  .filter(
+                                    (p) =>
+                                      !event.assignments.some(
+                                        (a) =>
+                                          a.round === round && (a.ns === p.id || a.ew === p.id),
+                                      ),
+                                  )
+                                  .map((p) => p.name)
+                                  .join('、') || '無'}
+                              </>
+                            ) : (
+                              '本圈賽程尚未安排'
+                            )}
                           </div>
                         </div>
                       )}
@@ -1249,11 +1308,6 @@ export default function Scoreboard() {
                                               mp?.top ?? 0,
                                               pairMethod,
                                             )}
-                                            {mp?.datum !== undefined && (
-                                              <small className="block muted">
-                                                Datum {mp.datum * sideSign}
-                                              </small>
-                                            )}
                                             {mp?.provisional && (
                                               <small className="block muted">暫定</small>
                                             )}
@@ -1281,38 +1335,68 @@ export default function Scoreboard() {
                           <h3>{event.kind === 'teams' ? '隊伍' : '搭檔'}個別成績</h3>
                           <p>每輪桌次、合約與得分紀錄。</p>
                         </div>
-                        <label className="participant-picker">
+                        <div className="participant-picker">
                           查看{event.kind === 'teams' ? '隊伍' : '搭檔'}
-                          <select
+                          <button
+                            className="participant-picker-trigger"
                             aria-label="選擇參賽者"
-                            value={person || event.participants[0].id}
-                            onChange={(e) => setPerson(e.target.value)}
+                            popoverTarget="participant-options"
+                            onClick={(e) => positionDetail(e.currentTarget)}
+                          >
+                            <span>{(person || event.participants[0].id).toUpperCase()}</span>
+                            <span>{name(person || event.participants[0].id)}</span>
+                            <ChevronDown size={16} />
+                          </button>
+                          <div
+                            id="participant-options"
+                            popover="auto"
+                            className="player-detail-popover participant-options"
                           >
                             {event.participants.map((p) => (
-                              <option value={p.id} key={p.id}>
-                                {p.id.toUpperCase()} · {p.name}
-                              </option>
+                              <button
+                                type="button"
+                                key={p.id}
+                                aria-pressed={p.id === (person || event.participants[0].id)}
+                                onClick={(e) => {
+                                  setPerson(p.id);
+                                  (
+                                    e.currentTarget.closest('[popover]') as HTMLElement
+                                  )?.hidePopover();
+                                }}
+                              >
+                                <span>{p.id.toUpperCase()}</span>
+                                <span>{p.name}</span>
+                              </button>
                             ))}
-                          </select>
-                        </label>
+                          </div>
+                        </div>
                       </div>
                       <div className="table-scroll">
                         <table>
                           <thead>
                             <tr>
                               <th aria-sort={playerSort === 'round' ? 'ascending' : 'none'}>
-                                <button className="contract-link" onClick={() => setPlayerSort('round')}>
+                                <button
+                                  className="contract-link"
+                                  onClick={() => setPlayerSort('round')}
+                                >
                                   輪次／桌
                                 </button>
                               </th>
                               <th aria-sort={playerSort === 'board' ? 'ascending' : 'none'}>
-                                <button className="contract-link" onClick={() => setPlayerSort('board')}>
+                                <button
+                                  className="contract-link"
+                                  onClick={() => setPlayerSort('board')}
+                                >
                                   牌號
                                 </button>
                               </th>
                               <th>方向</th>
                               <th aria-sort={playerSort === 'opponent' ? 'ascending' : 'none'}>
-                                <button className="contract-link" onClick={() => setPlayerSort('opponent')}>
+                                <button
+                                  className="contract-link"
+                                  onClick={() => setPlayerSort('opponent')}
+                                >
                                   對手
                                 </button>
                               </th>
@@ -1329,125 +1413,124 @@ export default function Scoreboard() {
                           </thead>
                           <tbody>
                             {playerRows.map(({ a, b, shaded }) => {
-                                  const r = event.results[resultKey(a.id, b)],
-                                    ns = a.ns === (person || event.participants[0].id),
-                                    mp = event.projection.pairScores[resultKey(a.id, b)],
-                                    value = mp ? (ns ? mp.ns : mp.ew) : null;
-                                  const scores = event.assignments
-                                    .filter((other) => other.boards.includes(b))
-                                    .map((other) => event.results[resultKey(other.id, b)])
-                                    .filter((result) => result && result.status !== 'cancelled')
-                                    .map((result) => result.nsScore);
-                                  const average = scores.length
-                                    ? (scores.reduce((sum, score) => sum + score, 0) /
-                                        scores.length) *
-                                      (ns ? 1 : -1)
-                                    : null;
-                                  const popupId = `player-${a.id}-${b}`;
-                                  const openBoard = () => {
-                                    setSelectedResult('');
-                                    setTravellerSide(ns ? 'ns' : 'ew');
-                                    setBoard(b);
-                                    setTab('boards');
-                                  };
-                                  return (
-                                    <tr
-                                      key={resultKey(a.id, b)}
-                                      className={shaded ? 'even-round' : undefined}
+                              const r = event.results[resultKey(a.id, b)],
+                                ns = a.ns === (person || event.participants[0].id),
+                                mp = event.projection.pairScores[resultKey(a.id, b)],
+                                value = mp ? (ns ? mp.ns : mp.ew) : null;
+                              const scores = event.assignments
+                                .filter((other) => other.boards.includes(b))
+                                .map((other) => event.results[resultKey(other.id, b)])
+                                .filter((result) => result && result.status !== 'cancelled')
+                                .map((result) => result.nsScore);
+                              const average = scores.length
+                                ? (scores.reduce((sum, score) => sum + score, 0) / scores.length) *
+                                  (ns ? 1 : -1)
+                                : null;
+                              const popupId = `player-${a.id}-${b}`;
+                              const openBoard = () => {
+                                setSelectedResult('');
+                                setTravellerSide(ns ? 'ns' : 'ew');
+                                setBoard(b);
+                                setTab('boards');
+                              };
+                              return (
+                                <tr
+                                  key={resultKey(a.id, b)}
+                                  className={shaded ? 'even-round' : undefined}
+                                >
+                                  <td>
+                                    <button
+                                      className="contract-link"
+                                      onClick={() => {
+                                        setRound(a.round);
+                                        setTab('rounds');
+                                      }}
                                     >
-                                      <td>
-                                        <button
-                                          className="contract-link"
-                                          onClick={() => {
-                                            setRound(a.round);
-                                            setTab('rounds');
-                                          }}
-                                        >
-                                          <strong className="player-round">R{a.round}</strong>
-                                          <small className="muted">/{a.table}</small>
-                                        </button>
-                                      </td>
-                                      <td>
-                                        <button className="text-button" onClick={openBoard}>
-                                          {b}
-                                        </button>
-                                      </td>
-                                      <td>{ns ? 'NS' : 'EW'}</td>
-                                      <td>
-                                        <span className="opponent-name">
-                                          {name(ns ? a.ew : a.ns)}{' '}
-                                          <small className="muted">
-                                            {(ns ? a.ew : a.ns).toUpperCase()}
-                                          </small>
-                                        </span>
-                                        <button
-                                          className="opponent-number contract-link"
-                                          popoverTarget={`${popupId}-opponent`}
-                                          onClick={(e) => positionDetail(e.currentTarget)}
-                                        >
-                                          {(ns ? a.ew : a.ns).toUpperCase()}
-                                        </button>
-                                        <div
-                                          id={`${popupId}-opponent`}
-                                          popover="auto"
-                                          className="player-detail-popover"
-                                        >
-                                          對手：{(ns ? a.ew : a.ns).toUpperCase()} ·{' '}
-                                          {name(ns ? a.ew : a.ns)}
-                                        </div>
-                                      </td>
-                                      <td>
-                                        <button
-                                          type="button"
-                                          className="contract-link"
-                                          aria-label={`查看牌號 ${b} 的逐副成績`}
-                                          onClick={openBoard}
-                                        >
-                                          <Contract result={r} />
-                                        </button>
-                                      </td>
-                                      <td className="mono">
-                                        <button
-                                          className="player-raw-score contract-link"
-                                          popoverTarget={`${popupId}-average`}
-                                          onClick={(e) => positionDetail(e.currentTarget)}
-                                        >
-                                          {r && r.status !== 'cancelled'
-                                            ? signed(r.nsScore * (ns ? 1 : -1))
-                                            : '—'}
-                                        </button>
-                                        <div
-                                          id={`${popupId}-average`}
-                                          popover="auto"
-                                          className="player-detail-popover"
-                                        >
-                                          牌號 {b} · {ns ? 'NS' : 'EW'} 平均分{' '}
-                                          {average === null
-                                            ? '—'
-                                            : `${average >= 0 ? '+' : ''}${number(average)}`}
-                                          （{scores.length} 桌有效結果）
-                                        </div>
-                                      </td>
-                                      <td
-                                        className={
-                                          event.kind === 'pairs'
-                                            ? `player-points ${pairTone(value, mp?.top ?? 0, pairMethod)}`
-                                            : undefined
-                                        }
-                                      >
-                                        <span className="player-points-value">
-                                          {event.kind === 'teams'
-                                            ? a.room === 'open'
-                                              ? '開室'
-                                              : '閉室'
-                                            : value !== null && mp
-                                              ? pairValue(value, mp.top, pairMethod)
-                                              : '—'}
-                                        </span>
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
+                                      <strong className="player-round">R{a.round}</strong>
+                                      <small className="muted">/{a.table}</small>
+                                    </button>
+                                  </td>
+                                  <td>
+                                    <button className="text-button" onClick={openBoard}>
+                                      {b}
+                                    </button>
+                                  </td>
+                                  <td>{ns ? 'NS' : 'EW'}</td>
+                                  <td>
+                                    <span className="opponent-name">
+                                      {name(ns ? a.ew : a.ns)}{' '}
+                                      <small className="muted">
+                                        {(ns ? a.ew : a.ns).toUpperCase()}
+                                      </small>
+                                    </span>
+                                    <button
+                                      className="opponent-number contract-link"
+                                      popoverTarget={`${popupId}-opponent`}
+                                      onClick={(e) => positionDetail(e.currentTarget)}
+                                    >
+                                      {(ns ? a.ew : a.ns).toUpperCase()}
+                                    </button>
+                                    <div
+                                      id={`${popupId}-opponent`}
+                                      popover="auto"
+                                      className="player-detail-popover"
+                                    >
+                                      對手：{(ns ? a.ew : a.ns).toUpperCase()} ·{' '}
+                                      {name(ns ? a.ew : a.ns)}
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <button
+                                      type="button"
+                                      className="contract-link"
+                                      aria-label={`查看牌號 ${b} 的逐副成績`}
+                                      onClick={openBoard}
+                                    >
+                                      <Contract result={r} />
+                                    </button>
+                                  </td>
+                                  <td className="mono">
+                                    <button
+                                      className="player-raw-score contract-link"
+                                      popoverTarget={`${popupId}-average`}
+                                      onClick={(e) => positionDetail(e.currentTarget)}
+                                    >
+                                      {r && r.status !== 'cancelled'
+                                        ? signed(r.nsScore * (ns ? 1 : -1))
+                                        : '—'}
+                                    </button>
+                                    <div
+                                      id={`${popupId}-average`}
+                                      popover="auto"
+                                      className="player-detail-popover"
+                                    >
+                                      牌號 {b} · {ns ? 'NS' : 'EW'} 平均分{' '}
+                                      {average === null
+                                        ? '—'
+                                        : `${average >= 0 ? '+' : ''}${number(average)}`}
+                                      （{scores.length} 桌有效結果）
+                                    </div>
+                                  </td>
+                                  <td
+                                    className={
+                                      event.kind === 'pairs'
+                                        ? `player-points ${pairTone(value, mp?.top ?? 0, pairMethod)}`
+                                        : undefined
+                                    }
+                                  >
+                                    <span className="player-points-value">
+                                      {event.kind === 'teams'
+                                        ? a.room === 'open'
+                                          ? '開室'
+                                          : '閉室'
+                                        : value !== null && mp
+                                          ? pairValue(value, mp.top, pairMethod)
+                                          : '—'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -1462,9 +1545,18 @@ export default function Scoreboard() {
                         await refresh();
                       }}
                       onCreate={() => setShowCreate(true)}
+                      onDeleted={async () => {
+                        requestGeneration.current++;
+                        setEvent(null);
+                        const list = await refreshList();
+                        setId(list[0]?.id ?? '');
+                        setTab('standings');
+                        setNotice('賽事已刪除。');
+                      }}
                       onLogout={async () => {
                         await api('/api/session', { method: 'DELETE' });
                         setAdmin(false);
+                        setDirector(false);
                         setTab('standings');
                       }}
                     />
@@ -1484,8 +1576,10 @@ export default function Scoreboard() {
         </main>
       </div>
       {showLogin && (
-        <Modal title="主辦登入" onClose={() => setShowLogin(false)}>
-          <p className="muted">輸入主辦或裁判密碼；只有裁判可取消結果及設定 Penalty。</p>
+        <Modal title="裁判／賽務登入" onClose={() => setShowLogin(false)}>
+          <p className="muted">
+            賽務可更正、取消及判罰；裁判另可建立、刪除、匯入匯出賽事及查看操作紀錄。
+          </p>
           {!configured && (
             <div className="alert">
               尚未設定登入。請依 README 設定 ADMIN_PASSWORD 與 SESSION_SECRET；本機可執行 npm run
@@ -1494,7 +1588,7 @@ export default function Scoreboard() {
           )}
           <form onSubmit={login}>
             <label className="field">
-              主辦／裁判密碼
+              裁判／賽務密碼
               <input
                 autoFocus
                 type="password"
@@ -1510,7 +1604,7 @@ export default function Scoreboard() {
               </p>
             )}
             <button disabled={!configured || loggingIn} className="button primary full">
-              {loggingIn ? '登入中…' : '登入主辦後台'}
+              {loggingIn ? '登入中…' : '登入後台'}
             </button>
           </form>
         </Modal>
@@ -1595,7 +1689,7 @@ function DealDiagram({ board }: { board: PublicEvent['boards'][number] }) {
       <div className="hidden-deal">
         <LockKeyhole size={32} />
         <strong>{'deal' in board ? '尚未匯入牌型' : '牌型尚未公開'}</strong>
-        <span>逐副合約與成績仍可在右側查詢。</span>
+        <span>逐副合約與成績可在下方的單副成績表查詢。</span>
       </div>
     );
   return (
@@ -1823,11 +1917,13 @@ function AdminPanel({
   eventId,
   onSaved,
   onCreate,
+  onDeleted,
   onLogout,
 }: {
   eventId: string;
   onSaved: (s: string) => Promise<void>;
   onCreate: () => void;
+  onDeleted: () => Promise<void>;
   onLogout: () => Promise<void>;
 }) {
   const [event, setEvent] = useState<AdminEvent | null>(null),
@@ -1851,6 +1947,7 @@ function AdminPanel({
   const [importType, setImportType] = useState('results'),
     [text, setText] = useState(''),
     [preview, setPreview] = useState('');
+  const [deleteName, setDeleteName] = useState('');
   const load = useCallback(async () => {
     const e = await api<AdminEvent>(`/api/admin/events/${eventId}`, { cache: 'no-store' });
     setEvent(e);
@@ -1862,7 +1959,7 @@ function AdminPanel({
     load()
       .then((e) => {
         if (alive) {
-          setRound(1);
+          setRound(e.assignments[0].round);
           setAssignment(e.assignments[0].id);
           setBoard(e.assignments[0].boards[0]);
         }
@@ -1897,7 +1994,7 @@ function AdminPanel({
             lead: '',
           },
     );
-    setReason(r ? '裁判更正' : '現場收分');
+    setReason(r ? '更正成績' : '現場收分');
   }, [assignment, board, event?.revision]);
   async function save(payload: Record<string, unknown>) {
     if (!event) return;
@@ -1913,7 +2010,13 @@ function AdminPanel({
           reason: payload.reason ?? reason,
         }),
       });
-      await load();
+      const updated = await load();
+      if (!updated.assignments.some((a) => a.id === assignment && a.boards.includes(board))) {
+        const first = updated.assignments.find((a) => a.round === round) ?? updated.assignments[0];
+        setRound(first.round);
+        setAssignment(first.id);
+        setBoard(first.boards[0]);
+      }
       await onSaved('已儲存並重新計分。觀眾頁面每 30 秒自動更新，也可手動更新。');
       return true;
     } catch (e) {
@@ -1951,13 +2054,15 @@ function AdminPanel({
         );
       } else {
         const rows = parseMovement(text, event as BridgeEvent);
-        setPreview(`共 ${rows.length} 組桌次安排；將替換目前 movement。`);
+        setPreview(
+          `共 ${rows.length} 組桌次安排；匯入所列輪次，已收分的輪次不得改動。首次匯入會取代尚未收分的預設賽程。`,
+        );
       }
     } catch (e) {
       setError((e as Error).message);
     }
   }
-  if (!event) return <section className="panel empty">{error || '載入主辦資料中…'}</section>;
+  if (!event) return <section className="panel empty">{error || '載入賽事資料中…'}</section>;
   const selected = event.assignments.find((a) => a.id === assignment),
     existing = event.results[resultKey(assignment, board)];
   const name = (id: string) => event.participants.find((p) => p.id === id)?.name ?? id;
@@ -1966,16 +2071,18 @@ function AdminPanel({
       <div className="panel-heading">
         <div>
           <h3>
-            {event.canDirect ? '裁判後台' : '主辦後台'}{' '}
+            {event.canDirect ? '裁判後台' : '賽務後台'}{' '}
             <span className="badge">版本 {event.revision}</span>
           </h3>
           <p>原始結果、排名與更正紀錄一併儲存。</p>
         </div>
         <div className="button-row">
-          <button className="button subtle" onClick={onCreate}>
-            <Plus size={15} />
-            新賽事
-          </button>
+          {event.canDirect && (
+            <button className="button subtle" onClick={onCreate}>
+              <Plus size={15} />
+              新賽事
+            </button>
+          )}
           <button className="button subtle" onClick={onLogout}>
             登出
           </button>
@@ -1984,10 +2091,10 @@ function AdminPanel({
       <div className="admin-tabs">
         {[
           ['score', '收分／更正'],
-          ['import', '匯入／匯出'],
-          ['publish', '發布設定'],
-          ...(event.canDirect ? [['penalty', '裁判 Penalty']] : []),
-          ['audit', '操作紀錄'],
+          ...(event.canDirect ? [['import', '匯入／匯出']] : []),
+          ['publish', event.canDirect ? '發布設定' : '賽事設定'],
+          ['penalty', '判罰調整'],
+          ...(event.canDirect ? [['audit', '操作紀錄']] : []),
         ].map(([k, v]) => (
           <button
             key={k}
@@ -2039,15 +2146,17 @@ function AdminPanel({
                     setBoard(a.boards[0]);
                   }}
                 >
-                  {Array.from({ length: event.rounds }, (_, i) => (
-                    <option value={i + 1} key={i}>
-                      {i + 1}
-                    </option>
-                  ))}
+                  {[...new Set(event.assignments.map((a) => a.round))]
+                    .sort((a, b) => a - b)
+                    .map((r) => (
+                      <option value={r} key={r}>
+                        {r}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label className="field">
-                桌次／房間
+                桌次
                 <select
                   value={assignment}
                   onChange={(e) => {
@@ -2060,8 +2169,7 @@ function AdminPanel({
                     .filter((a) => a.round === round)
                     .map((a) => (
                       <option key={a.id} value={a.id}>
-                        桌 {a.table}{' '}
-                        {a.room === 'open' ? '開室' : a.room === 'closed' ? '閉室' : ''} · {a.id}
+                        {a.table}
                       </option>
                     ))}
                 </select>
@@ -2203,211 +2311,260 @@ function AdminPanel({
               <Check size={16} />
               {busy ? '儲存中…' : existing ? '儲存更正並重算' : '提交成績'}
             </button>
-            {event.canDirect && (
-              <div className="director-controls">
-                <strong>裁判結果裁定</strong>
-                <p>
-                  Cancelled 排除此桌此副的比較並視為已處理，不等於 Pass
-                  out。請先在上方填寫裁定原因；恢復時採用上方合約。
-                </p>
-                <button
-                  type="button"
-                  className="button subtle"
-                  disabled={busy || event.status === 'finished' || reason.trim().length < 2}
-                  onClick={() =>
-                    save({
-                      action: 'ruling',
-                      assignmentId: assignment,
-                      board,
-                      cancelled: existing?.status !== 'cancelled',
-                      ...(existing?.status === 'cancelled'
-                        ? { result: { ...input, assignmentId: assignment, board } }
-                        : {}),
-                      reason,
-                    })
-                  }
-                >
-                  {existing?.status === 'cancelled'
-                    ? '裁判：恢復為上方合約'
-                    : '裁判：設為 Cancelled'}
-                </button>
-              </div>
-            )}
+            <div className="director-controls">
+              <strong>結果裁定</strong>
+              <p>
+                Cancelled 排除此桌此副的比較並視為已處理，不等於 Pass
+                out。請先在上方填寫裁定原因；恢復時採用上方合約。
+              </p>
+              <button
+                type="button"
+                className="button subtle"
+                disabled={busy || event.status === 'finished' || reason.trim().length < 2}
+                onClick={() =>
+                  save({
+                    action: 'ruling',
+                    assignmentId: assignment,
+                    board,
+                    cancelled: existing?.status !== 'cancelled',
+                    ...(existing?.status === 'cancelled'
+                      ? { result: { ...input, assignmentId: assignment, board } }
+                      : {}),
+                    reason,
+                  })
+                }
+              >
+                {existing?.status === 'cancelled' ? '恢復為上方合約' : '設為 Cancelled'}
+              </button>
+            </div>
             {event.status === 'finished' && (
               <p className="footnote">賽事已結束；更正前請至發布設定重新開放。</p>
             )}
           </form>
         )}
-        {section === 'import' && (
+        {section === 'import' && event.canDirect && (
           <>
-            <div className="button-row export-row">
-              <button
-                className="button subtle"
-                onClick={() =>
-                  download(
-                    `${event.id}-results.csv`,
-                    exportResultsCsv(event as BridgeEvent),
-                    'text/csv',
-                  )
-                }
-              >
-                <ArrowDownToLine size={16} />
-                成績 CSV
-              </button>
-              {event.kind === 'pairs' && (
+            <section className="import-export-section">
+              <h4>匯出資料</h4>
+              <p>下載目前賽事的成績、賽程或牌型。</p>
+              <div className="button-row export-row">
                 <button
                   className="button subtle"
                   onClick={() =>
                     download(
-                      `${event.id}-movement.csv`,
-                      exportMovement(event as BridgeEvent),
+                      `${event.id}-results.csv`,
+                      exportResultsCsv(event as BridgeEvent),
                       'text/csv',
                     )
                   }
                 >
-                  Movement CSV
+                  <ArrowDownToLine size={16} />
+                  成績 CSV
                 </button>
-              )}
-              <button
-                className="button subtle"
-                onClick={() => download(`${event.id}.pbn`, exportPbn(event as BridgeEvent))}
-              >
-                牌型 PBN
-              </button>
-              <button
-                className="button subtle"
-                onClick={() =>
-                  download(
-                    `${event.id}-backup.json`,
-                    JSON.stringify(event, null, 2),
-                    'application/json',
-                  )
-                }
-              >
-                賽事資料 JSON
-              </button>
-            </div>
-            <label className="field">
-              匯入類型
-              <select
-                value={importType}
-                onChange={(e) => {
-                  setImportType(e.target.value);
-                  setPreview('');
-                  setText('');
-                }}
-              >
-                <option value="results">成績 CSV</option>
-                <option value="pbn">完整牌型 PBN</option>
-                {event.kind === 'pairs' && <option value="movement">Movement CSV</option>}
-              </select>
-            </label>
-            <label className="field">
-              選擇檔案（最多 200 KB）
-              <input
-                type="file"
-                accept={importType === 'pbn' ? '.pbn' : '.csv'}
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    if (file.size > 200000) {
-                      setError('檔案超過 200 KB');
-                      return;
+                {event.kind === 'pairs' && (
+                  <button
+                    className="button subtle"
+                    onClick={() =>
+                      download(
+                        `${event.id}-movement.csv`,
+                        exportMovement(event as BridgeEvent),
+                        'text/csv',
+                      )
                     }
-                    setText(await file.text());
+                  >
+                    <ArrowDownToLine size={16} />
+                    Movement CSV
+                  </button>
+                )}
+                <button
+                  className="button subtle"
+                  onClick={() => download(`${event.id}.pbn`, exportPbn(event as BridgeEvent))}
+                >
+                  <ArrowDownToLine size={16} />
+                  牌型 PBN
+                </button>
+                <button
+                  className="button subtle"
+                  onClick={() =>
+                    download(
+                      `${event.id}-backup.json`,
+                      JSON.stringify(event, null, 2),
+                      'application/json',
+                    )
+                  }
+                >
+                  <ArrowDownToLine size={16} />
+                  賽事資料 JSON
+                </button>
+              </div>
+            </section>
+            <section className="import-export-section">
+              <h4>匯入資料</h4>
+              <a className="button subtle" href="/docs/import-formats.md" download>
+                <ArrowDownToLine size={16} />
+                下載匯入格式文件
+              </a>
+              <label className="field">
+                匯入類型
+                <select
+                  value={importType}
+                  onChange={(e) => {
+                    setImportType(e.target.value);
                     setPreview('');
-                  }
-                }}
-              />
-            </label>
-            <label className="field">
-              或貼上內容
-              <textarea
-                rows={8}
-                value={text}
-                onChange={(e) => {
-                  setText(e.target.value);
-                  setPreview('');
-                }}
-                placeholder={
-                  importType === 'results'
-                    ? 'assignmentId,board,level,strain,doubled,declarer,tricks,lead\nr1m1o,1,3,NT,1,N,9,SA'
-                    : importType === 'movement'
-                      ? 'round,table,ns,ew,boards\n1,1,p1,p2,1;2'
-                      : '[Board "1"]\n[Dealer "N"]\n[Vulnerable "None"]\n[Deal "N:..."]'
-                }
-              />
-            </label>
-            <label className="field">
-              匯入說明
-              <input
-                minLength={2}
-                maxLength={200}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
-            </label>
-            <div className="button-row">
-              <button className="button subtle" onClick={previewImport}>
-                驗證並預覽
-              </button>
-              <button
-                className="button primary"
-                disabled={!preview || busy || reason.trim().length < 2}
-                onClick={async () => {
-                  try {
-                    const payload =
-                      importType === 'results'
-                        ? { action: 'results', results: parseResultsCsv(text) }
-                        : importType === 'pbn'
-                          ? { action: 'pbn', pbn: text }
-                          : { action: 'movement', csv: text };
-                    if (await save(payload)) {
+                    setText('');
+                  }}
+                >
+                  <option value="results">成績 CSV</option>
+                  <option value="pbn">完整牌型 PBN</option>
+                  {event.kind === 'pairs' && <option value="movement">Movement CSV</option>}
+                </select>
+              </label>
+              <label className="field">
+                選擇檔案（最多 200 KB）
+                <input
+                  type="file"
+                  accept={importType === 'pbn' ? '.pbn' : '.csv'}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      if (file.size > 200000) {
+                        setError('檔案超過 200 KB');
+                        return;
+                      }
+                      setText(await file.text());
                       setPreview('');
-                      setText('');
                     }
-                  } catch (e) {
-                    setError((e as Error).message);
+                  }}
+                />
+              </label>
+              <label className="field">
+                或貼上內容
+                <textarea
+                  rows={8}
+                  value={text}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    setPreview('');
+                  }}
+                  placeholder={
+                    importType === 'results'
+                      ? 'assignmentId,board,level,strain,doubled,declarer,tricks,lead\nr1m1o,1,3,NT,1,N,9,SA'
+                      : importType === 'movement'
+                        ? 'round,table,ns,ew,boards\n1,1,p1,p2,1;2'
+                        : '[Board "1"]\n[Dealer "N"]\n[Vulnerable "None"]\n[Deal "N:..."]'
                   }
-                }}
-              >
-                {busy ? '匯入中…' : '確認匯入'}
-              </button>
-            </div>
-            {preview && <pre className="import-preview">{preview}</pre>}
-            <p className="footnote">
-              先匯出範例了解欄位。搭檔 ID 可從 movement 查閱；成績使用 assignmentId 與 board
-              定位。牌型與 movement 僅能在尚未收分時替換。
-            </p>
+                />
+              </label>
+              <label className="field">
+                匯入說明
+                <input
+                  minLength={2}
+                  maxLength={200}
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </label>
+              <div className="button-row">
+                <button className="button subtle" onClick={previewImport}>
+                  驗證並預覽
+                </button>
+                <button
+                  className="button primary"
+                  disabled={!preview || busy || reason.trim().length < 2}
+                  onClick={async () => {
+                    try {
+                      const payload =
+                        importType === 'results'
+                          ? { action: 'results', results: parseResultsCsv(text) }
+                          : importType === 'pbn'
+                            ? { action: 'pbn', pbn: text }
+                            : { action: 'movement', csv: text };
+                      if (await save(payload)) {
+                        setPreview('');
+                        setText('');
+                      }
+                    } catch (e) {
+                      setError((e as Error).message);
+                    }
+                  }}
+                >
+                  {busy ? '匯入中…' : '確認匯入'}
+                </button>
+              </div>
+              {preview && <pre className="import-preview">{preview}</pre>}
+              <p className="footnote">
+                先匯出範例了解欄位。搭檔 ID 可從 movement 查閱；成績使用 assignmentId 與 board
+                定位。牌型僅能在尚未收分時替換；movement
+                可逐圈補入，每圈必須完整，已收分輪次不可改動。
+              </p>
+            </section>
           </>
         )}
         {section === 'publish' && (
           <>
-            <h4>逐副公開牌型</h4>
-            <p>每副獨立控制手牌、PBN 與雙夢家分析。已下載的牌型無法收回。</p>
-            <div className="publication-grid">
-              {event.boards.map((b) => {
-                const published = b.published ?? event.publishBoards;
-                return (
-                  <button
-                    key={b.number}
-                    disabled={busy}
-                    aria-pressed={published}
-                    className={`button ${published ? 'primary' : 'subtle'}`}
-                    onClick={() =>
-                      save({
-                        action: 'board-publication',
-                        board: b.number,
-                        published: !published,
-                        reason: `B${b.number} ${published ? '隱藏' : '公開'}牌型`,
-                      })
-                    }
-                  >
-                    B{b.number} · {published ? '已公開' : '隱藏中'}
-                  </button>
-                );
-              })}
-            </div>
+            {event.canDirect && (
+              <>
+                <h4>依牌組公開牌型</h4>
+                <p>
+                  每個按鈕一次公開或隱藏所列牌號的手牌、PBN 與雙夢家分析。牌組由 PBN
+                  指定，未指定時依每圈牌數自動分組。已下載的牌型無法收回。
+                </p>
+                <div className="publication-grid">
+                  {boardGroups(event.boards, event.boardsPerRound).map((group) => {
+                    const b = group[0];
+                    const published = group.every((item) => item.published ?? event.publishBoards);
+                    const label = boardRange(group.map((item) => item.number));
+                    return (
+                      <button
+                        key={b.number}
+                        disabled={busy}
+                        aria-pressed={published}
+                        className={`button ${published ? 'primary' : 'subtle'}`}
+                        onClick={() =>
+                          save({
+                            action: 'board-publication',
+                            board: b.number,
+                            published: !published,
+                            reason: `牌 ${label} ${published ? '隱藏' : '公開'}牌型`,
+                          })
+                        }
+                      >
+                        {label} · {published ? '已公開' : '隱藏中'}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+            <form
+              className="setting-row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const form = new FormData(e.currentTarget);
+                void save({
+                  action: 'settings',
+                  status: event.status,
+                  awardPlaces: Number(form.get('awardPlaces')),
+                  reason: '設定給獎名次',
+                });
+              }}
+            >
+              <label className="field">
+                給獎至第幾名（0 表示不給獎）
+                <input
+                  key={event.awardPlaces ?? 3}
+                  name="awardPlaces"
+                  type="number"
+                  min="0"
+                  max="32"
+                  required
+                  defaultValue={event.awardPlaces ?? 3}
+                />
+              </label>
+              <button className="button subtle" disabled={busy}>
+                儲存給獎設定
+              </button>
+            </form>
             <div className="setting-row">
               <div>
                 <strong>賽事狀態</strong>
@@ -2428,11 +2585,48 @@ function AdminPanel({
             </div>
             <p className="footnote">
               隊制賽採 WBF 連續 20–0 VP；雙人賽依建立時選定的 MP／CrossIMP／ButlerIMP。Cancelled 與
-              Penalty 僅限裁判操作。加權／平均分及跨組 Neuberg 尚未支援。
+              Penalty 可由裁判或賽務操作。加權／平均分及跨組 Neuberg 尚未支援。
             </p>
+            {event.canDirect && (
+              <form
+                className="import-export-section"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setBusy(true);
+                  setError('');
+                  try {
+                    await api(`/api/admin/events/${eventId}`, {
+                      method: 'DELETE',
+                      body: JSON.stringify({ confirmName: deleteName, revision: event.revision }),
+                    });
+                    await onDeleted();
+                  } catch (error) {
+                    setError((error as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                <h4>刪除賽事</h4>
+                <p>
+                  永久刪除此賽事的賽程、成績與操作紀錄。請輸入完整賽事名稱「{event.name}」確認。
+                </p>
+                <label className="field">
+                  確認賽事名稱
+                  <input
+                    value={deleteName}
+                    onChange={(e) => setDeleteName(e.target.value)}
+                    autoComplete="off"
+                  />
+                </label>
+                <button className="button primary" disabled={busy || deleteName !== event.name}>
+                  永久刪除賽事
+                </button>
+              </form>
+            )}
           </>
         )}
-        {section === 'penalty' && event.canDirect && (
+        {section === 'penalty' && (
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -2445,7 +2639,7 @@ function AdminPanel({
               });
             }}
           >
-            <h4>裁判 Penalty</h4>
+            <h4>判罰調整</h4>
             <p>
               設定該參賽者的累計扣分（取代既有值，非追加）；輸入 0 可撤銷。單位：
               {event.kind === 'teams'
@@ -2488,13 +2682,13 @@ function AdminPanel({
               />
             </label>
             <button className="button primary" disabled={busy || event.status === 'finished'}>
-              儲存裁判 Penalty
+              儲存判罰調整
             </button>
           </form>
         )}
-        {section === 'audit' && (
+        {section === 'audit' && event.canDirect && (
           <div className="audit-list">
-            {[...event.audit].reverse().map((a) => (
+            {[...(event.audit ?? [])].reverse().map((a) => (
               <div className="audit-item" key={a.revision}>
                 <span className="audit-dot" />
                 <div>

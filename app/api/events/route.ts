@@ -3,6 +3,8 @@ import { createSchema } from '@/lib/model';
 import { createEvent } from '@/lib/events';
 import { insertEvent, listEvents, storageMode } from '@/lib/store';
 import { errorResponse, readJson, requireAdmin } from '@/lib/http';
+import { isDirector } from '@/lib/auth';
+import { DomainError } from '@/lib/events';
 export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
@@ -26,7 +28,7 @@ export async function GET() {
           expected: p.expected,
         })),
       },
-      { headers: { 'Cache-Control': 'public, max-age=0, s-maxage=15' } },
+      { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (e) {
     return errorResponse(e);
@@ -35,6 +37,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     await requireAdmin(request);
+    if (!(await isDirector())) throw new DomainError('建立賽事僅限裁判', 403);
     const event = createEvent(createSchema.parse(await readJson(request)));
     await insertEvent(event);
     return NextResponse.json({ id: event.id }, { status: 201 });
