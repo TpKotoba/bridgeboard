@@ -1910,8 +1910,9 @@ select {
   background: #fffefa;
   box-shadow: 0 2px 3px #244b3814;
   font:
-    600 min(24px, 20cqw)/1.05 ui-monospace,
-    monospace;
+    700 min(24px, 20cqw)/1.05 'Source Serif 4',
+    serif;
+  font-variant-numeric: lining-nums tabular-nums;
   color: #244b38;
 }
 .trick-card-N {
@@ -1989,9 +1990,9 @@ select {
   min-width: 0;
   white-space: nowrap;
   overflow: visible;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: 'Source Serif 4', serif;
   font-size: min(22px, 15cqw);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0;
   font-variant-numeric: lining-nums;
 }
@@ -2005,10 +2006,28 @@ select {
   transform-origin: left center;
 }
 .bridge-ranks .hand-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
   display: inline-block;
   position: relative;
   width: min(30px, 10cqw);
   text-align: center;
+}
+.bridge-ranks .hand-card:disabled {
+  opacity: 1;
+}
+.bridge-ranks .hand-card:not(:disabled) {
+  cursor: pointer;
+}
+.bridge-ranks .hand-card:not(:disabled):hover,
+.bridge-ranks .hand-card:focus-visible {
+  background: #dcebe0;
+  outline: 1px solid #7a9c85;
+  border-radius: 2px;
 }
 .card-dd-value {
   position: absolute;
@@ -2018,16 +2037,17 @@ select {
   min-width: 1em;
   padding: 0.05em;
   border-radius: 1px;
-  background: #b4d77930;
+  background: #b4d77980;
   color: #27401c;
   font:
-    400 0.5em/1.1 ui-monospace,
-    monospace;
+    500 0.55em/1.1 'DM Sans',
+    sans-serif;
+  font-variant-numeric: lining-nums tabular-nums;
   text-align: center;
   letter-spacing: 0;
 }
 .card-dd-value.dd-inferior {
-  background: #e8a19a30;
+  background: #e8a19a80;
   color: #9c302a;
 }
 .par-corner .par-reference {
@@ -2223,8 +2243,9 @@ select {
   align-items: center;
   justify-content: center;
   min-width: 0;
-  height: 74px;
-  padding: 8px 0;
+  min-height: 74px;
+  height: auto;
+  padding: 11px 0;
   gap: 3px;
   border: 1px solid #9dbcaa;
   border-bottom: 3px solid #7a9c85;
@@ -2241,10 +2262,9 @@ select {
 }
 .rack-card > b {
   font:
-    600 clamp(12px, 5cqw, 22px)/1.1 ui-monospace,
-    SFMono-Regular,
-    Consolas,
-    monospace;
+    700 clamp(12px, 5cqw, 22px)/1.1 'Source Serif 4',
+    serif;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 .rack-card.red-suit {
   color: #b54843;
@@ -2359,6 +2379,7 @@ select {
 }
 @media (max-width: 640px) {
   .rack-card {
+    min-height: 0;
     height: auto;
     padding: clamp(6px, 2.5cqw, 11px) 0;
   }
@@ -2372,5 +2393,28 @@ select {
   }
   .board-jump select {
     font-size: 13px;
+  }
+}
+@media (min-width: 900px) {
+  .par-corner {
+    font-size: min(18px, 10cqw);
+  }
+  .par-corner .corner-kicker {
+    font-size: min(12px, 7cqw);
+  }
+  .par-corner strong,
+  .par-corner strong.your-contract {
+    font-size: min(28px, 14cqw);
+  }
+  .par-corner small,
+  .par-corner .par-reference {
+    font-size: min(14px, 8cqw);
+  }
+  .hcp-corner .hcp-metadata {
+    font-size: min(24px, 13cqw);
+  }
+  .hcp-compass {
+    font-size: min(23px, 13cqw);
+    grid-template: repeat(3, min(28px, 16cqw)) / repeat(3, min(30px, 17cqw));
   }
 }

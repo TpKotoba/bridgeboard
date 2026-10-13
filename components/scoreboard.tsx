@@ -424,11 +424,6 @@ export default function Scoreboard() {
             <p>每一副牌，都值得記錄。</p>
             <small>Bridgeboard · MVP 0.1</small>
           </div>
-          <button className={`nav-item ${tab === 'admin' ? 'active' : ''}`} onClick={openAdmin}>
-            <Settings2 size={18} />
-            {admin ? '主辦後台' : '裁判登入'}
-            <LockKeyhole size={14} />
-          </button>
         </div>
       </aside>
       <div className="main-shell">

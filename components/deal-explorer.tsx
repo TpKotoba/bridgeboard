@@ -189,6 +189,11 @@ export function DealExplorer({
   const turn = state ? nextSeat(state) : undefined;
   const finished = state ? state.ns + state.ew === 13 : false;
   const playable = new Set(state ? legalCards(state) : []);
+  function playFromHand(seat: Seat | undefined, card: string) {
+    if (!state || seat !== turn || finished || busy || !future || !playable.has(card)) return;
+    setFuture(null);
+    setHistory([...history, playCard(state, card, strain)]);
+  }
   const best = turn ? bestDeclarerTricks(Object.values(values), turn, declarer) : undefined;
   const actualContract = !result
     ? '待收分'
@@ -297,8 +302,14 @@ export function DealExplorer({
                     >
                       {cards.length
                         ? cards.map((card) => (
-                            <span
+                            <button
                               key={card}
+                              type="button"
+                              aria-label={`${seat} ${card}，出牌`}
+                              disabled={
+                                seat !== turn || finished || busy || !future || !playable.has(card)
+                              }
+                              onClick={() => playFromHand(seat, card)}
                               className={`hand-card ${validLead && seat === leader && card === lead ? 'opening-lead' : ''}`}
                             >
                               {card[1]}
@@ -310,7 +321,7 @@ export function DealExplorer({
                                   {values[card]}
                                 </sub>
                               )}
-                            </span>
+                            </button>
                           ))
                         : '—'}
                     </span>
@@ -431,10 +442,7 @@ export function DealExplorer({
                   }
                   disabled={busy || !future || !playable.has(card)}
                   aria-label={`${turn} ${card}`}
-                  onClick={() => {
-                    setFuture(null);
-                    setHistory([...history, playCard(state, card, strain)]);
-                  }}
+                  onClick={() => playFromHand(turn, card)}
                 >
                   <span>{symbols[card[0]]}</span>
                   <b>{card[1]}</b>
