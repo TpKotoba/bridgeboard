@@ -3,8 +3,136 @@ import assert from 'node:assert/strict';
 import { createEvent, applyMutation } from '../lib/events';
 import { impPairScore, project, trimScores } from '../lib/scoring';
 import { publicBoards } from '../lib/public-event';
-import { legalCards, nextSeat, playCard, PlayState, toPbn } from '../lib/play';
+import {
+  bestDeclarerTricks,
+  legalCards,
+  nextSeat,
+  playCard,
+  playFromResult,
+  PlayState,
+  toPbn,
+} from '../lib/play';
+import { tableNames } from '../lib/table-names';
+import type { Result } from '../lib/model';
 import { parseResultsCsv, exportResultsCsv } from '../lib/imports';
+import { highCardPoints, lawOfTotalTricks } from '../lib/deal-analysis';
+import { boardRounds } from '../lib/board-navigation';
+import { makeBoard } from '../lib/events';
+
+test('DD best move maximizes declarer tricks for declarer side and minimizes for defenders', () => {
+  assert.equal(bestDeclarerTricks([4, 4, 5], 'N', 'N'), 5);
+  assert.equal(bestDeclarerTricks([4, 4, 5], 'S', 'N'), 5);
+  assert.equal(bestDeclarerTricks([4, 4, 5], 'E', 'N'), 4);
+  assert.equal(bestDeclarerTricks([4, 4, 5], 'W', 'N'), 4);
+  assert.equal(bestDeclarerTricks([8, 9], 'E', 'W'), 9);
+  assert.equal(bestDeclarerTricks([8, 9], 'S', 'W'), 8);
+  assert.equal(bestDeclarerTricks([], 'N', 'N'), undefined);
+});
+
+test('table selection maps pair names to the correct sides without inventing team lineups', () => {
+  const e = event(),
+    assignment = e.assignments[0];
+  const ns = e.participants.find((p) => p.id === assignment.ns)!;
+  const ew = e.participants.find((p) => p.id === assignment.ew)!;
+  ns.name = 'North Player / South Player';
+  ew.name = 'East Player／West Player';
+  assert.deepEqual(tableNames('pairs', e.participants, assignment), {
+    N: 'North Player',
+    S: 'South Player',
+    E: 'East Player',
+    W: 'West Player',
+  });
+  ns.players = '北家、南家';
+  assert.equal(tableNames('pairs', e.participants, assignment).N, '北家');
+  ns.players = '';
+  ns.name = '陳宥綺 黃順捷';
+  ew.name = '吳承翰　江少甫';
+  assert.deepEqual(tableNames('pairs', e.participants, assignment), {
+    N: '陳宥綺',
+    S: '黃順捷',
+    E: '吳承翰',
+    W: '江少甫',
+  });
+  ns.players = ' 陳宥綺  黃順捷 ';
+  assert.equal(tableNames('pairs', e.participants, assignment).S, '黃順捷');
+  ns.players = '';
+  ns.name = 'Mary Smith';
+  assert.equal(tableNames('pairs', e.participants, assignment).N, 'Mary Smith');
+  assert.equal(tableNames('pairs', e.participants, assignment).S, 'Mary Smith');
+  ns.name = 'NS Team';
+  ns.players = 'A / B / C / D';
+  assert.equal(tableNames('teams', e.participants, assignment).N, 'NS Team');
+  assert.equal(tableNames('teams', e.participants, assignment).S, 'NS Team');
+  assert.deepEqual(tableNames('pairs', e.participants), {});
+});
+
+test('a selected played contract starts with the opening leader; passes and cancellations do not', () => {
+  const board = makeBoard(1);
+  const result: Result = {
+    assignmentId: 'a',
+    board: 1,
+    level: 3,
+    strain: 'NT',
+    doubled: 1,
+    declarer: 'W',
+    tricks: 9,
+    lead: '',
+    nsScore: -400,
+    updatedAt: '',
+  };
+  const state = playFromResult(board, result)!;
+  assert.equal(nextSeat(state), 'N');
+  assert.equal(state.hands.N.length, 13);
+  const next = playCard(state, legalCards(state)[0], result.strain);
+  assert.equal(nextSeat(next), 'E');
+  assert.equal(state.hands.N.length, 13);
+  assert.equal(board.deal.N.length, 13);
+  assert.equal(playFromResult(board, { ...result, level: 0 }), null);
+  assert.equal(playFromResult(board, { ...result, status: 'cancelled' }), null);
+  assert.equal(playFromResult(board), null);
+});
+
+test('128 boards remain directly addressable by round and within-round number', () => {
+  const e = createEvent({
+    name: 'World-size QA',
+    kind: 'pairs',
+    date: '2026-10-13',
+    venue: '',
+    names: ['A', 'B', 'C', 'D', 'E', 'F'],
+    rounds: 4,
+    boardsPerRound: 32,
+  });
+  const choices = boardRounds(e);
+  assert.equal(choices.length, 4);
+  assert.deepEqual(
+    choices.map((r) => r.boards.length),
+    [32, 32, 32, 32],
+  );
+  assert.equal(choices[3].boards[31], 128);
+});
+test('HCP and LoTT use the whole deal and the corresponding trump strain', () => {
+  const board = makeBoard(1);
+  assert.equal(
+    ['N', 'E', 'S', 'W'].reduce(
+      (n, seat) => n + highCardPoints(board.deal[seat as keyof typeof board.deal]),
+      0,
+    ),
+    40,
+  );
+  const table = [
+    [7, 6, 7, 5],
+    [4, 9, 4, 9],
+    [6, 7, 6, 7],
+    [7, 6, 7, 6],
+    [4, 9, 4, 9],
+  ];
+  assert.deepEqual(lawOfTotalTricks(board, table), {
+    fit: 17,
+    tricks: 16,
+    difference: 1,
+    suits: ['S', 'H'],
+  });
+});
 function event() {
   return createEvent({
     name: 'Advanced QA',
@@ -19,8 +147,29 @@ function event() {
   });
 }
 test('cancelled team boards contribute no IMP and an entirely cancelled match earns no VP', () => {
-  const e = createEvent({ name: 'Team QA', kind: 'teams', date: '2026-10-13', venue: '', names: ['A', 'B', 'C', 'D'], rounds: 1, boardsPerRound: 1 });
-  for (const a of e.assignments) e.results[`${a.id}:1`] = { assignmentId: a.id, board: 1, level: 0, strain: 'NT', doubled: 1, declarer: 'N', tricks: 0, lead: '', nsScore: 0, updatedAt: '', status: 'cancelled' };
+  const e = createEvent({
+    name: 'Team QA',
+    kind: 'teams',
+    date: '2026-10-13',
+    venue: '',
+    names: ['A', 'B', 'C', 'D'],
+    rounds: 1,
+    boardsPerRound: 1,
+  });
+  for (const a of e.assignments)
+    e.results[`${a.id}:1`] = {
+      assignmentId: a.id,
+      board: 1,
+      level: 0,
+      strain: 'NT',
+      doubled: 1,
+      declarer: 'N',
+      tricks: 0,
+      lead: '',
+      nsScore: 0,
+      updatedAt: '',
+      status: 'cancelled',
+    };
   const p = project(e);
   assert.equal(p.received, p.expected);
   assert.ok(p.matches.every((m) => m.vpA === null && m.vpB === null && m.completed === 1));
@@ -169,6 +318,13 @@ test('interactive play enforces turns and follow suit, resolves trump winner and
   assert.equal(p.ns, 1);
   assert.equal(p.leader, 'S');
   assert.equal(p.trick.length, 0);
+  assert.deepEqual(p.lastTrick, [
+    { seat: 'N', card: 'SA' },
+    { seat: 'E', card: 'S2' },
+    { seat: 'S', card: 'H2' },
+    { seat: 'W', card: 'SK' },
+  ]);
+  assert.equal(s.lastTrick, undefined);
   assert.deepEqual(s.hands.N, ['SA']);
   assert.equal(toPbn(s.hands), 'N:A... 2... .2.. K...');
   const follow = {

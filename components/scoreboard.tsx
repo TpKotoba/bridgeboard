@@ -36,6 +36,8 @@ import type {
 } from '@/lib/model';
 import { resultKey } from '@/lib/model';
 import { DealExplorer } from './deal-explorer';
+import { tableNames } from '@/lib/table-names';
+import { boardRounds as getBoardRounds } from '@/lib/board-navigation';
 import { contractScore, imps } from '@/lib/scoring';
 import {
   exportMovement,
@@ -71,6 +73,15 @@ function pairValue(value: number | null | undefined, top: number, method = 'mp')
       : number(value);
 }
 const suitSymbols: Record<string, string> = { S: '♠', H: '♥', D: '♦', C: '♣', NT: 'NT' };
+function pairTone(value: number | null | undefined, top: number, method: string) {
+  if (value == null || (method === 'mp' && top <= 0)) return 'score-neutral';
+  const score = method === 'mp' ? (value / top) * 100 : value;
+  return score < (method === 'mp' ? 40 : -2)
+    ? 'score-low'
+    : score > (method === 'mp' ? 60 : 2)
+      ? 'score-high'
+      : 'score-neutral';
+}
 const seatNames: Record<Seat, string> = { N: '北', E: '東', S: '南', W: '西' };
 const vulNames: Record<string, string> = {
   None: '雙方無身價',
@@ -130,8 +141,33 @@ function Contract({ result }: { result?: Result }) {
   );
 }
 export default function Scoreboard() {
-  const [resultSort, setResultSort] = useState('table');
+  const [resultSort, setResultSort] = useState('table-asc');
+  const [travellerSide, setTravellerSide] = useState<'ns' | 'ew'>('ns');
   const [selectedResult, setSelectedResult] = useState('');
+  const [resultSelection, setResultSelection] = useState(0);
+  function chooseResult(id: string) {
+    setSelectedResult((current) => (current === id ? '' : id));
+    setResultSelection((value) => value + 1);
+  }
+  function sortHeading(key: 'table' | 'score' | 'points', label: string) {
+    const active = resultSort.startsWith(key);
+    const descending = resultSort.endsWith('desc');
+    return (
+      <th aria-sort={active ? (descending ? 'descending' : 'ascending') : 'none'}>
+        <button
+          type="button"
+          className="traveller-sort"
+          onClick={() =>
+            setResultSort(
+              `${key}-${active ? (descending ? 'asc' : 'desc') : key === 'table' ? 'asc' : 'desc'}`,
+            )
+          }
+        >
+          {label} <span aria-hidden="true">{active ? (descending ? '↓' : '↑') : '↕'}</span>
+        </button>
+      </th>
+    );
+  }
   const [events, setEvents] = useState<EventSummary[]>([]),
     [id, setId] = useState(''),
     [event, setEvent] = useState<PublicEvent | null>(null);
@@ -283,25 +319,50 @@ export default function Scoreboard() {
   }
   const name = (pid: string) => event?.participants.find((p) => p.id === pid)?.name ?? pid;
   const selectedBoard = event?.boards.find((b) => b.number === board) ?? event?.boards[0];
+  const boardRounds = event ? getBoardRounds(event) : [];
+  const boardRound =
+    boardRounds.find((r) => r.boards.includes(selectedBoard?.number ?? 0)) ?? boardRounds[0];
+  const boardNumberInRound = boardRound?.boards.indexOf(selectedBoard?.number ?? 0) ?? 0;
+  const completedBoardScores =
+    event && selectedBoard
+      ? event.assignments
+          .filter((a) => a.boards.includes(selectedBoard.number))
+          .map((a) => event.results[resultKey(a.id, selectedBoard.number)])
+          .filter((r) => r && r.status !== 'cancelled')
+          .map((r) => r.nsScore)
+      : [];
+  const averageBoardScore = completedBoardScores.length
+    ? completedBoardScores.reduce((sum, score) => sum + score, 0) / completedBoardScores.length
+    : null;
   const pairMethod = event?.pairMethod ?? 'mp';
+  const scoreSide = event?.kind === 'pairs' ? travellerSide : 'ns';
+  const sideSign = scoreSide === 'ns' ? 1 : -1;
+  const sideLabel = scoreSide.toUpperCase();
   const traveller =
     event && selectedBoard
       ? event.assignments
           .filter((a) => a.boards.includes(selectedBoard.number))
           .sort((a, b) => {
-            if (resultSort === 'table') return a.round - b.round || a.table - b.table;
+            if (resultSort.startsWith('table'))
+              return (
+                (a.table - b.table || a.round - b.round) * (resultSort.endsWith('desc') ? -1 : 1)
+              );
             const value = (assignment: Assignment) => {
               const key = resultKey(assignment.id, selectedBoard.number),
-                r = event.results[key],
-                p = event.projection.pairScores[key];
+                r = event.results[key];
               if (!r || r.status === 'cancelled') return null;
-              return resultSort.startsWith('score')
-                ? r.nsScore
-                : p?.ns == null
+              if (resultSort.startsWith('points')) {
+                const points = event.projection.pairScores[key];
+                const score = points?.[scoreSide];
+                return score == null
                   ? null
                   : pairMethod === 'mp'
-                    ? p.ns / p.top
-                    : p.ns;
+                    ? points.top > 0
+                      ? score / points.top
+                      : null
+                    : score;
+              }
+              return r.nsScore * sideSign;
             };
             const x = value(a),
               y = value(b);
@@ -315,6 +376,10 @@ export default function Scoreboard() {
           })
       : [];
   const activeResult = event?.results[resultKey(selectedResult, selectedBoard?.number ?? 0)];
+  const activeAssignment = event?.assignments.find(
+    (a) => a.id === selectedResult && a.boards.includes(selectedBoard?.number ?? 0),
+  );
+  const activeNames = event ? tableNames(event.kind, event.participants, activeAssignment) : {};
   const selectedRoundMatches = event?.projection.matches.filter((m) => m.round === round) ?? [];
   const navItems: [Tab, string, typeof Trophy][] = [
     ['standings', '總排名', Trophy],
@@ -361,7 +426,7 @@ export default function Scoreboard() {
           </div>
           <button className={`nav-item ${tab === 'admin' ? 'active' : ''}`} onClick={openAdmin}>
             <Settings2 size={18} />
-            主辦後台
+            {admin ? '主辦後台' : '裁判登入'}
             <LockKeyhole size={14} />
           </button>
         </div>
@@ -377,31 +442,30 @@ export default function Scoreboard() {
               <i />
               {mode === 'demo' ? '展示模式' : mode === 'local' ? '本機測試' : '雲端儲存'}
             </span>
-            <button className="icon-button" aria-label="主辦後台" onClick={openAdmin}>
-              <Settings2 size={19} />
+            <button className="button subtle login-button" onClick={openAdmin}>
+              {admin ? '主辦後台' : '裁判登入'}
             </button>
-            <span className="avatar">B</span>
           </div>
         </header>
         <main>
           <div className="page-heading">
             <div>
               <div className="eyebrow">TOURNAMENT CENTER</div>
-              <h1>
-                賽事記分板<span className="heading-dot">.</span>
-              </h1>
+              <h1>賽事記分板</h1>
               <p>從總排名到每一副牌，掌握賽場上的每個變化。</p>
             </div>
-            <button
-              className="button primary"
-              onClick={() => {
-                if (!admin) setShowLogin(true);
-                else setShowCreate(true);
-              }}
-            >
-              <Plus size={17} />
-              建立賽事
-            </button>
+            {admin && (
+              <button
+                className="button primary"
+                onClick={() => {
+                  if (!admin) setShowLogin(true);
+                  else setShowCreate(true);
+                }}
+              >
+                <Plus size={17} />
+                建立賽事
+              </button>
+            )}
           </div>
           {error && (
             <div className="alert error" role="alert">
@@ -471,7 +535,7 @@ export default function Scoreboard() {
               {event && (
                 <>
                   <section className="event-heading">
-                    <div>
+                    <div className="event-intro">
                       <div className="section-kicker">
                         {event.demo ? 'SAMPLE EVENT' : 'OFFICIAL WORKSPACE'} <span>／</span>{' '}
                         {event.kind === 'teams' ? 'TEAM TOURNAMENT' : 'PAIRS TOURNAMENT'}
@@ -480,7 +544,7 @@ export default function Scoreboard() {
                       <div className="event-meta">
                         <span>{event.date}</span>
                         <span>{event.venue || '線上記分'}</span>
-                        <span>
+                        <span className="event-format">
                           {event.kind === 'teams'
                             ? 'WBF 20–0 VP'
                             : `${methodNames[pairMethod]} · 合併排名 · ${event.trim === 'one' ? '各去一筆' : event.trim === 'ten-percent' ? '各去 10%' : '不去頭尾'}`}
@@ -806,31 +870,69 @@ export default function Scoreboard() {
                   )}
                   {tab === 'boards' && selectedBoard && (
                     <>
-                      <div className="board-nav">
+                      <div
+                        className={`board-nav board-jump ${event.kind === 'pairs' ? 'pairs-board-jump' : ''}`}
+                      >
                         <button
                           className="icon-button"
                           aria-label="上一副"
-                          disabled={board <= 1}
-                          onClick={() => setBoard(board - 1)}
+                          disabled={selectedBoard.number <= 1}
+                          onClick={() => setBoard(selectedBoard.number - 1)}
                         >
                           <ArrowLeft size={18} />
                         </button>
-                        <div className="board-pills">
-                          {event.boards.map((b) => (
-                            <button
-                              key={b.number}
-                              className={selectedBoard.number === b.number ? 'selected' : ''}
-                              onClick={() => setBoard(b.number)}
+                        {event.kind === 'teams' && (
+                          <label>
+                            <select
+                              aria-label="選擇圈數"
+                              value={boardRound?.round ?? 1}
+                              onChange={(e) =>
+                                setBoard(
+                                  boardRounds.find((r) => r.round === Number(e.target.value))
+                                    ?.boards[0] ?? 1,
+                                )
+                              }
                             >
-                              {b.number}
-                            </button>
-                          ))}
-                        </div>
+                              {boardRounds.map((r) => (
+                                <option key={r.round} value={r.round}>
+                                  第 {r.round} 圈
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                        <label>
+                          <select
+                            aria-label={event.kind === 'teams' ? '選擇圈內第幾牌' : '選擇牌號'}
+                            value={
+                              event.kind === 'teams' ? boardNumberInRound : selectedBoard.number
+                            }
+                            onChange={(e) =>
+                              setBoard(
+                                event.kind === 'teams'
+                                  ? (boardRound?.boards[Number(e.target.value)] ?? 1)
+                                  : Number(e.target.value),
+                              )
+                            }
+                          >
+                            {event.kind === 'teams'
+                              ? boardRound?.boards.map((number, index) => (
+                                  <option key={`${number}-${index}`} value={index}>
+                                    第 {index + 1} 牌
+                                  </option>
+                                ))
+                              : event.boards.map((board) => (
+                                  <option key={board.number} value={board.number}>
+                                    牌號 {board.number}
+                                  </option>
+                                ))}
+                          </select>
+                        </label>
                         <button
                           className="icon-button"
                           aria-label="下一副"
-                          disabled={board >= event.boards.length}
-                          onClick={() => setBoard(board + 1)}
+                          disabled={selectedBoard.number >= event.boards.length}
+                          onClick={() => setBoard(selectedBoard.number + 1)}
                         >
                           <ArrowRight size={18} />
                         </button>
@@ -838,14 +940,26 @@ export default function Scoreboard() {
                       <div className="board-layout">
                         <section className="panel deal-panel">
                           <div className="panel-heading">
-                            <h3>牌號 {selectedBoard.number}</h3>
-                            <span className="badge">{vulNames[selectedBoard.vulnerability]}</span>
+                            <h3 className="board-summary">
+                              牌號 {selectedBoard.number}
+                              <span>
+                                （{sideLabel} 平均分{' '}
+                                {averageBoardScore === null
+                                  ? '—'
+                                  : `${averageBoardScore * sideSign >= 0 ? '+' : ''}${number(averageBoardScore * sideSign)}`}
+                                ，{completedBoardScores.length} 桌有效結果）
+                              </span>
+                            </h3>
                           </div>
                           {hasDeal(selectedBoard) && selectedBoard.deal.N.length === 13 ? (
                             <DealExplorer
                               key={`${event.id}:${selectedBoard.number}`}
                               board={selectedBoard}
                               result={activeResult}
+                              playerNames={activeNames}
+                              resultSelection={resultSelection}
+                              tableSelected={!!activeAssignment}
+                              onManualTrial={() => setSelectedResult('')}
                             />
                           ) : (
                             <DealDiagram board={selectedBoard} />
@@ -877,38 +991,15 @@ export default function Scoreboard() {
                           <div className="panel-heading">
                             <div>
                               <h3>{event.kind === 'teams' ? '兩房逐副比較' : '單副成績表'}</h3>
-                              <p>Board {selectedBoard.number} · 南北原始分</p>
                             </div>
                           </div>
-                          <label className="traveler-controls">
-                            結果排序
-                            <select
-                              aria-label="逐副結果排序"
-                              value={resultSort}
-                              onChange={(e) => setResultSort(e.target.value)}
-                            >
-                              <option value="table">桌次</option>
-                              <option value="score-desc">NS 分：高 → 低</option>
-                              <option value="score-asc">NS 分：低 → 高</option>
-                              {event.kind === 'pairs' && (
-                                <>
-                                  <option value="mp-desc">
-                                    {pairMethod === 'mp' ? 'NS MP%' : 'NS IMP'}：高 → 低
-                                  </option>
-                                  <option value="mp-asc">
-                                    {pairMethod === 'mp' ? 'NS MP%' : 'NS IMP'}：低 → 高
-                                  </option>
-                                </>
-                              )}
-                            </select>
-                          </label>
                           <div className="table-scroll">
                             {event.kind === 'teams' ? (
                               <table>
                                 <thead>
                                   <tr>
-                                    <th>隊伍對戰</th>
-                                    <th>開室</th>
+                                    {sortHeading('table', '隊伍對戰／桌次')}
+                                    {sortHeading('score', '開室 NS 分')}
                                     <th>閉室</th>
                                     <th>IMP</th>
                                   </tr>
@@ -929,39 +1020,67 @@ export default function Scoreboard() {
                                         y =
                                           event.results[resultKey(closed.id, selectedBoard.number)];
                                       return (
-                                        <tr key={a.id}>
+                                        <tr
+                                          key={a.id}
+                                          className={
+                                            selectedResult === a.id || selectedResult === closed.id
+                                              ? 'selected-result selectable-result'
+                                              : 'selectable-result'
+                                          }
+                                          tabIndex={0}
+                                          role="button"
+                                          aria-pressed={selectedResult === a.id}
+                                          onClick={() => chooseResult(a.id)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                              e.preventDefault();
+                                              chooseResult(a.id);
+                                            }
+                                          }}
+                                          aria-label={`選取第 ${a.table} 桌開室，點閉室欄可選閉室`}
+                                        >
                                           <td>
                                             <strong>{name(a.ns)}</strong>
                                             <small className="block muted">vs {name(a.ew)}</small>
                                           </td>
                                           <td>
-                                            <button
-                                              className="button subtle"
-                                              aria-pressed={selectedResult === a.id}
-                                              onClick={() => setSelectedResult(a.id)}
-                                            >
-                                              選開室
-                                            </button>
                                             <Contract result={x} />
                                             <small className="block mono">
-                                              {x && x.status !== 'cancelled' ? signed(x.nsScore) : '—'}
+                                              {x && x.status !== 'cancelled'
+                                                ? signed(x.nsScore)
+                                                : '—'}
                                             </small>
                                           </td>
-                                          <td>
-                                            <button
-                                              className="button subtle"
-                                              aria-pressed={selectedResult === closed.id}
-                                              onClick={() => setSelectedResult(closed.id)}
-                                            >
-                                              選閉室
-                                            </button>
+                                          <td
+                                            tabIndex={0}
+                                            role="button"
+                                            aria-label={`選取第 ${a.table} 桌閉室，查看首攻`}
+                                            aria-pressed={selectedResult === closed.id}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              chooseResult(closed.id);
+                                            }}
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                chooseResult(closed.id);
+                                              }
+                                            }}
+                                          >
                                             <Contract result={y} />
                                             <small className="block mono">
-                                              {y && y.status !== 'cancelled' ? signed(y.nsScore) : '—'}
+                                              {y && y.status !== 'cancelled'
+                                                ? signed(y.nsScore)
+                                                : '—'}
                                             </small>
                                           </td>
                                           <td className="accent mono">
-                                            {x?.status === 'cancelled' || y?.status === 'cancelled' ? 'Cancelled' : x && y ? signed(imps(x.nsScore + y.nsScore)) : '—'}
+                                            {x?.status === 'cancelled' || y?.status === 'cancelled'
+                                              ? 'Cancelled'
+                                              : x && y
+                                                ? signed(imps(x.nsScore + y.nsScore))
+                                                : '—'}
                                           </td>
                                         </tr>
                                       );
@@ -972,11 +1091,39 @@ export default function Scoreboard() {
                               <table>
                                 <thead>
                                   <tr>
-                                    <th>桌／輪</th>
-                                    <th>NS / EW</th>
+                                    {sortHeading('table', '桌／輪')}
+                                    <th>
+                                      <button
+                                        type="button"
+                                        className="traveller-sort side-switch"
+                                        aria-label={`目前 ${sideLabel}，切換為 ${travellerSide === 'ns' ? 'EW' : 'NS'}`}
+                                        onClick={() =>
+                                          setTravellerSide(travellerSide === 'ns' ? 'ew' : 'ns')
+                                        }
+                                      >
+                                        <span
+                                          className={
+                                            travellerSide === 'ns' ? 'side-active' : 'side-muted'
+                                          }
+                                        >
+                                          NS
+                                        </span>{' '}
+                                        /{' '}
+                                        <span
+                                          className={
+                                            travellerSide === 'ew' ? 'side-active' : 'side-muted'
+                                          }
+                                        >
+                                          EW
+                                        </span>
+                                      </button>
+                                    </th>
                                     <th>合約</th>
-                                    <th>NS 分</th>
-                                    <th>{pairMethod === 'mp' ? 'NS MP%' : 'NS IMP'}</th>
+                                    {sortHeading('score', `${sideLabel} 分`)}
+                                    {sortHeading(
+                                      'points',
+                                      `${sideLabel} ${pairMethod === 'mp' ? 'MP%' : 'IMP'}`,
+                                    )}
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -990,36 +1137,56 @@ export default function Scoreboard() {
                                         <tr
                                           key={a.id}
                                           className={
-                                            selectedResult === a.id ? 'selected-result' : ''
+                                            selectedResult === a.id
+                                              ? 'selected-result selectable-result'
+                                              : 'selectable-result'
                                           }
+                                          tabIndex={0}
+                                          role="button"
+                                          aria-label={`選取第 ${a.table} 桌，查看首攻`}
+                                          aria-pressed={selectedResult === a.id}
+                                          onClick={() => chooseResult(a.id)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                              e.preventDefault();
+                                              chooseResult(a.id);
+                                            }
+                                          }}
                                         >
-                                          <td>
-                                            <button
-                                              className="button subtle"
-                                              aria-pressed={selectedResult === a.id}
-                                              onClick={() => setSelectedResult(a.id)}
-                                            >
-                                              選桌 {a.table}
-                                            </button>
-                                            <small className="block muted">R{a.round}</small>
+                                          <td className="table-round">
+                                            {a.table} <small className="muted">/ R{a.round}</small>
                                           </td>
                                           <td>
-                                            {name(a.ns)}
-                                            <small className="block muted">{name(a.ew)}</small>
+                                            <span
+                                              className={`block ${travellerSide === 'ns' ? 'side-active' : 'side-muted'}`}
+                                            >
+                                              {name(a.ns)}
+                                            </span>
+                                            <span
+                                              className={`block ${travellerSide === 'ew' ? 'side-active' : 'side-muted'}`}
+                                            >
+                                              {name(a.ew)}
+                                            </span>
                                           </td>
                                           <td>
                                             <Contract result={r} />
                                           </td>
                                           <td className="mono">
                                             {r && r.status !== 'cancelled'
-                                              ? signed(r.nsScore)
+                                              ? signed(r.nsScore * sideSign)
                                               : '—'}
                                           </td>
-                                          <td className="accent mono">
-                                            {pairValue(mp?.ns, mp?.top ?? 0, pairMethod)}
+                                          <td
+                                            className={`mono ${pairTone(mp?.[travellerSide], mp?.top ?? 0, pairMethod)}`}
+                                          >
+                                            {pairValue(
+                                              mp?.[travellerSide],
+                                              mp?.top ?? 0,
+                                              pairMethod,
+                                            )}
                                             {mp?.datum !== undefined && (
                                               <small className="block muted">
-                                                Datum {mp.datum}
+                                                Datum {mp.datum * sideSign}
                                               </small>
                                             )}
                                             {mp?.provisional && (
@@ -2203,11 +2370,15 @@ function AdminPanel({
                         <p className="mono" key={c.key}>
                           {c.key}：
                           {c.before
-                            ? c.before.status === 'cancelled' ? 'Cancelled' : `${displayContract(c.before)} ${c.before.declarer} ${resultText(c.before)} (${c.before.nsScore})`
+                            ? c.before.status === 'cancelled'
+                              ? 'Cancelled'
+                              : `${displayContract(c.before)} ${c.before.declarer} ${resultText(c.before)} (${c.before.nsScore})`
                             : '未收分'}{' '}
                           →{' '}
                           {c.after
-                            ? c.after.status === 'cancelled' ? 'Cancelled' : `${displayContract(c.after)} ${c.after.declarer} ${resultText(c.after)} (${c.after.nsScore})`
+                            ? c.after.status === 'cancelled'
+                              ? 'Cancelled'
+                              : `${displayContract(c.after)} ${c.after.declarer} ${resultText(c.after)} (${c.after.nsScore})`
                             : '刪除'}
                         </p>
                       ))}

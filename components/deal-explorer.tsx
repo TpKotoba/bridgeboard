@@ -1,21 +1,55 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Board, Result, Seat, seats } from '@/lib/model';
-import { legalCards, nextSeat, playCard, PlayState, ranks, strains, toPbn } from '@/lib/play';
+import { Undo2, X } from 'lucide-react';
+import type { Board, Result, Seat } from '@/lib/model';
+import { seats } from '@/lib/model';
+import { formatParContract, highCardPoints, lawOfTotalTricks } from '@/lib/deal-analysis';
+import {
+  initialPlay,
+  bestDeclarerTricks,
+  playFromResult,
+  legalCards,
+  nextSeat,
+  playCard,
+  type PlayState,
+  ranks,
+  strains,
+  toPbn,
+} from '@/lib/play';
+
 const symbols: Record<string, string> = { S: '♠', H: '♥', D: '♦', C: '♣', NT: 'NT' };
+const seatNames: Record<Seat, string> = { N: '北', E: '東', S: '南', W: '西' };
+const ddStrains = ['C', 'D', 'H', 'S', 'NT'] as const;
+const ddSeats: Seat[] = ['N', 'S', 'E', 'W'];
 type Future = { cards: number; suit: number[]; rank: number[]; equals: number[]; score: number[] };
-export function DealExplorer({ board, result }: { board: Board; result?: Result }) {
-  const [table, setTable] = useState<number[][] | null>(null);
-  const [strain, setStrain] = useState<string>('NT');
-  const [declarer, setDeclarer] = useState<Seat>('N');
+type Analysis = { tricks: number[][]; par: { score: number; contracts: string[] } };
+
+export function DealExplorer({
+  board,
+  result,
+  playerNames = {},
+  resultSelection = 0,
+  onManualTrial,
+  tableSelected = false,
+}: {
+  board: Board;
+  result?: Result;
+  playerNames?: Partial<Record<Seat, string>>;
+  resultSelection?: number;
+  onManualTrial?: () => void;
+  tableSelected?: boolean;
+}) {
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [selection, setSelection] = useState('');
   const [history, setHistory] = useState<PlayState[]>([]);
   const [future, setFuture] = useState<Future | null>(null);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(true);
   const worker = useRef<Worker | null>(null);
-  const request = useRef(0);
-  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef(new Map<number, (value: unknown) => void>());
+  const request = useRef(0);
+  const detachResult = useRef(false);
+  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   function send(type: string, payload: object, accept: (value: unknown) => void) {
     const id = ++request.current;
     pending.current.set(id, accept);
@@ -32,16 +66,24 @@ export function DealExplorer({ board, result }: { board: Board; result?: Result 
       pending.current.delete(data.id);
     };
     w.onerror = () => {
-      setError('無法載入分析引擎；可重開此副重試。');
+      setError('無法載入分析引擎；請重新開啟此副。');
       setBusy(false);
     };
     setBusy(true);
-    send('table', { cards: toPbn(board.deal) }, (value) => {
-      setTable(value as number[][]);
-      setBusy(false);
-    });
+    send(
+      'table',
+      {
+        cards: toPbn(board.deal),
+        dealer: seats.indexOf(board.dealer),
+        vulnerable: { None: 0, All: 1, NS: 2, EW: 3 }[board.vulnerability],
+      },
+      (value) => {
+        setAnalysis(value as Analysis);
+        setBusy(false);
+      },
+    );
     timeout.current = setTimeout(() => {
-      setError('分析超過 60 秒，已停止；請重開此副重試。');
+      setError('分析超過 60 秒，已停止。');
       setBusy(false);
       w.terminate();
     }, 60000);
@@ -52,24 +94,34 @@ export function DealExplorer({ board, result }: { board: Board; result?: Result 
     };
   }, [board.number, toPbn(board.deal)]);
   useEffect(() => {
-    if (table && timeout.current) clearTimeout(timeout.current);
-  }, [table]);
-  // A traveler selection highlights the recorded lead but does not play it automatically.
+    if (analysis && timeout.current) clearTimeout(timeout.current);
+  }, [analysis]);
   useEffect(() => {
-    setHistory([]);
-    setFuture(null);
-    if (result && result.status !== 'cancelled' && result.level) {
-      setStrain(result.strain);
-      setDeclarer(result.declarer);
-    }
-  }, [result?.assignmentId, result?.updatedAt, result?.status]);
-  const state = history.at(-1);
-  useEffect(() => {
-    setFuture(null);
-    if (!state || state.ns + state.ew === 13) {
-      setBusy(!table);
+    if (detachResult.current) {
+      detachResult.current = false;
       return;
     }
+    const start = playFromResult(board, result);
+    setSelection(start && result ? result.declarer + result.strain : '');
+    setHistory(start ? [start] : []);
+    setFuture(null);
+    setBusy(start ? true : !analysis);
+    setError('');
+  }, [
+    result?.assignmentId,
+    result?.updatedAt,
+    result?.status,
+    result?.level,
+    result?.strain,
+    result?.declarer,
+    resultSelection,
+  ]);
+  const state = history.at(-1),
+    declarer = (selection[0] || 'N') as Seat,
+    strain = selection.slice(1) || 'NT';
+  useEffect(() => {
+    setFuture(null);
+    if (!state || state.ns + state.ew === 13) return;
     let alive = true;
     setBusy(true);
     send(
@@ -96,22 +148,23 @@ export function DealExplorer({ board, result }: { board: Board; result?: Result 
       alive = false;
     };
   }, [state, strain]);
-  function start(s = strain, d = declarer) {
-    setStrain(s);
-    setDeclarer(d);
+  function toggle(seat: Seat, trump: string) {
+    // Clearing the selected row must not overwrite the manual DD choice in the result effect.
+    detachResult.current = !!result;
+    onManualTrial?.();
+    const key = seat + trump;
+    if (selection === key) {
+      setSelection('');
+      setHistory([]);
+      setFuture(null);
+      setBusy(false);
+      return;
+    }
+    setSelection(key);
+    setFuture(null);
     setError('');
-    setHistory([
-      {
-        hands: structuredClone(board.deal),
-        trick: [],
-        leader: seats[(seats.indexOf(d) + 1) % 4],
-        ns: 0,
-        ew: 0,
-      },
-    ]);
+    setHistory([initialPlay(board, seat)]);
   }
-  const hand = state?.hands ?? board.deal;
-  const legal = state ? legalCards(state) : [];
   const lead = result?.status === 'cancelled' ? '' : result?.lead.toUpperCase().replace('10', 'T');
   const leader = result ? seats[(seats.indexOf(result.declarer) + 1) % 4] : undefined;
   const validLead = !!(lead && leader && board.deal[leader].includes(lead));
@@ -129,148 +182,278 @@ export function DealExplorer({ board, result }: { board: Board; result?: Result 
         if (future.equals[i] & (1 << rank))
           values[strains[future.suit[i]] + ranks[rank - 2]] = score;
     }
+  const points = Object.fromEntries(
+    seats.map((seat) => [seat, highCardPoints(board.deal[seat])]),
+  ) as Record<Seat, number>;
+  const lott = analysis ? lawOfTotalTricks(board, analysis.tricks) : null;
+  const turn = state ? nextSeat(state) : undefined;
+  const finished = state ? state.ns + state.ew === 13 : false;
+  const playable = new Set(state ? legalCards(state) : []);
+  const best = turn ? bestDeclarerTricks(Object.values(values), turn, declarer) : undefined;
+  const actualContract = !result
+    ? '待收分'
+    : result.status === 'cancelled'
+      ? 'Cancelled'
+      : result.level === 0
+        ? 'PASS'
+        : `${result.level}${symbols[result.strain]}${result.doubled === 2 ? 'X' : result.doubled === 4 ? 'XX' : ''}.${result.declarer}`;
+  const contractDelta = result && result.level > 0 ? result.tricks - result.level - 6 : null;
+  const shownScore = tableSelected
+    ? result?.status === 'cancelled'
+      ? undefined
+      : result?.nsScore
+    : analysis?.par.score;
+  // Keep all four cards visible until the next trick starts, including the final trick.
+  const displayedTrick = state?.trick.length ? state.trick : (state?.lastTrick ?? []);
+  const rack =
+    state && turn
+      ? [...state.hands[turn]].sort(
+          (a, b) =>
+            strains.indexOf(a[0] as (typeof strains)[number]) -
+              strains.indexOf(b[0] as (typeof strains)[number]) ||
+            ranks.indexOf(b[1]) - ranks.indexOf(a[1]),
+        )
+      : [];
   return (
     <div className="deal-explorer">
-      <div className="deal-diagram">
-        {(['N', 'W', 'E', 'S'] as Seat[]).map((seat) => (
-          <div className={`hand hand-${seat}`} key={seat}>
-            <div className="seat-label">
-              {seat} {state && nextSeat(state) === seat && '← 輪到出牌'}
-            </div>
-            {strains.slice(0, 4).map((s) => (
-              <div className="suit-line" key={s}>
-                <b className={s === 'H' || s === 'D' ? 'red' : ''}>{symbols[s]}</b>
-                <span>
-                  {hand[seat]
-                    .filter((c) => c[0] === s)
-                    .sort((a, b) => ranks.indexOf(b[1]) - ranks.indexOf(a[1]))
-                    .map((card) => (
-                      <button
-                        type="button"
-                        key={card}
-                        className={`playing-card ${validLead && card === lead && seat === leader ? 'opening-lead' : ''}`}
-                        aria-label={`${seat} ${card}${values[card] !== undefined ? `，莊家 ${values[card]} 墩` : ''}${card === lead && seat === leader ? ' 首攻' : ''}`}
-                        disabled={
-                          !state || nextSeat(state) !== seat || !legal.includes(card) || busy
-                        }
-                        onClick={() =>
-                          state && setHistory([...history, playCard(state, card, strain)])
-                        }
-                      >
-                        {card[1]}
-                        {values[card] !== undefined && <small>{values[card]}</small>}
-                      </button>
-                    ))}
-                  {!hand[seat].some((c) => c[0] === s) && '—'}
-                </span>
-              </div>
-            ))}
+      <div className="compass-board">
+        <section
+          className="analysis-corner par-corner"
+          aria-label={`第 ${board.number} 牌 Par Contract 與 LoTT`}
+        >
+          <div className="par-heading">
+            <span className="corner-kicker">
+              {tableSelected ? 'YOUR CONTRACT' : 'PAR CONTRACT'}
+            </span>
           </div>
+          {analysis || tableSelected ? (
+            <>
+              <strong className={tableSelected ? 'your-contract' : undefined}>
+                {tableSelected
+                  ? actualContract
+                  : analysis!.par.contracts.map(formatParContract).join(' · ') || 'Pass out'}
+                {tableSelected && result?.status !== 'cancelled' && contractDelta !== null && (
+                  <span className="contract-outcome">
+                    {' / '}
+                    {contractDelta === 0
+                      ? '='
+                      : contractDelta > 0
+                        ? `+${contractDelta}`
+                        : contractDelta}
+                  </span>
+                )}
+              </strong>
+              {shownScore !== undefined && (
+                <span>
+                  {shownScore < 0 ? 'EW' : 'NS'} +{Math.abs(shownScore)}
+                </span>
+              )}
+              {tableSelected && analysis && (
+                <small className="par-reference">
+                  Par: {analysis.par.contracts.map(formatParContract).join(' · ') || 'Pass out'}
+                </small>
+              )}
+              {lott && !tableSelected && (
+                <small>
+                  LoTT {lott!.fit} − {lott!.tricks} = {lott!.difference}
+                </small>
+              )}
+            </>
+          ) : (
+            <span>計算中…</span>
+          )}
+        </section>
+        <div className="compass-spare" aria-hidden="true" />
+        {(['N', 'W', 'E', 'S'] as Seat[]).map((seat) => (
+          <section
+            className={`bridge-hand bridge-hand-${seat}`}
+            key={seat}
+            aria-label={`${seatNames[seat]}家手牌`}
+          >
+            <header
+              className={
+                board.vulnerability === 'All' ||
+                board.vulnerability === (seat === 'N' || seat === 'S' ? 'NS' : 'EW')
+                  ? 'vulnerable'
+                  : ''
+              }
+            >
+              <b>{seat}</b>
+              <span className="hand-player-name" title={playerNames[seat]}>
+                {playerNames[seat] || `${seatNames[seat]}家`}
+              </span>
+            </header>
+            {strains.slice(0, 4).map((suit) => {
+              const cards = board.deal[seat]
+                .filter((card) => card[0] === suit)
+                .sort((a, b) => ranks.indexOf(b[1]) - ranks.indexOf(a[1]));
+              return (
+                <div className="bridge-suit" key={suit}>
+                  <b className={suit === 'H' || suit === 'D' ? 'red' : ''}>{symbols[suit]}</b>
+                  <span className="bridge-ranks">
+                    <span
+                      className="rank-string"
+                      style={{ transform: `scaleX(${Math.min(1, 8 / Math.max(1, cards.length))})` }}
+                    >
+                      {cards.length
+                        ? cards.map((card) => (
+                            <span
+                              key={card}
+                              className={`hand-card ${validLead && seat === leader && card === lead ? 'opening-lead' : ''}`}
+                            >
+                              {card[1]}
+                              {seat === turn && !finished && values[card] !== undefined && (
+                                <sub
+                                  className={`card-dd-value ${values[card] === best ? 'dd-best' : 'dd-inferior'}`}
+                                  aria-label={`莊家最終 ${values[card]} 墩，${values[card] === best ? '最佳' : '非最佳'}出牌`}
+                                >
+                                  {values[card]}
+                                </sub>
+                              )}
+                            </span>
+                          ))
+                        : '—'}
+                    </span>
+                  </span>
+                </div>
+              );
+            })}
+          </section>
         ))}
-        <div className="deal-center">
-          <span>BOARD {board.number}</span>
-          <strong>{state ? `${state.ns} : ${state.ew}` : symbols[strain]}</strong>
-          <small>{state ? 'NS : EW 已得墩' : `${declarer} 莊家`}</small>
+        <div className="compass-center" role="group" aria-label="本墩出牌">
+          {displayedTrick.map(({ seat, card }) => (
+            <span
+              key={seat}
+              className={`trick-card trick-card-${seat} ${card[0] === 'H' || card[0] === 'D' ? 'red-suit' : ''}`}
+              aria-label={`${seat} ${symbols[card[0]]}${card[1]}`}
+            >
+              <span>{symbols[card[0]]}</span>
+              <b>{card[1]}</b>
+            </span>
+          ))}
         </div>
+        <section className="analysis-corner hcp-corner" aria-label="發牌、身價與大牌點">
+          <div className="hcp-metadata">
+            <span>Dir: {board.dealer}</span>
+            <span>Vul: {board.vulnerability}</span>
+          </div>
+          <div className="hcp-compass">
+            <span>{points.N}</span>
+            <span>{points.W}</span>
+            <span>{points.E}</span>
+            <span>{points.S}</span>
+          </div>
+        </section>
+        <section className="analysis-corner dd-corner" aria-label="Double dummy 最佳墩數">
+          {analysis && (
+            <table className="compact-dd">
+              <thead>
+                <tr>
+                  <th></th>
+                  {ddStrains.map((s) => (
+                    <th key={s}>{symbols[s]}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ddSeats.map((seat) => (
+                  <tr key={seat}>
+                    <th>{seat}</th>
+                    {ddStrains.map((trump) => (
+                      <td key={trump}>
+                        <button
+                          type="button"
+                          aria-label={`${seat} ${symbols[trump]} ${analysis.tricks[strains.indexOf(trump)][seats.indexOf(seat)]} 墩${selection === seat + trump ? '，試打中，點擊退出' : '，點擊試打'}`}
+                          aria-pressed={selection === seat + trump}
+                          onClick={() => toggle(seat, trump)}
+                        >
+                          {analysis.tricks[strains.indexOf(trump)][seats.indexOf(seat)]}
+                        </button>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
       </div>
-      {lead && (
-        <p className={validLead ? 'lead-note' : 'error-text'}>
-          {validLead
-            ? `已標示首攻 ${leader} ${symbols[lead[0]]}${lead.slice(1)}`
-            : `首攻 ${lead} 不在應首攻者手中，請核對紀錄。`}
+      {lead && !validLead && <p className="error-text">首攻 {lead} 與牌型不符，請核對紀錄。</p>}
+      {state && (
+        <div className="play-keyboard">
+          <div className="play-keyboard-heading">
+            <strong>
+              {finished ? '已打完' : `${turn} ${playerNames[turn!] || seatNames[turn!]} 出牌`}
+            </strong>
+            <button
+              type="button"
+              onClick={() => {
+                setFuture(null);
+                setHistory(history.slice(0, -1));
+              }}
+              disabled={history.length < 2}
+              aria-label="上一步"
+              title="上一步"
+            >
+              <Undo2 size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelection('');
+                setHistory([]);
+                setFuture(null);
+                setBusy(false);
+              }}
+              aria-label="離開試打"
+              title="離開試打"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="play-context">
+            <span>
+              {tableSelected && result ? actualContract : `${declarer} ${symbols[strain]}`} · NS{' '}
+              {state.ns} / EW {state.ew}
+            </span>
+          </div>
+          {!finished && (
+            <div
+              className="play-rack"
+              aria-label={`${turn} ${playerNames[turn!] || ''} 的剩餘手牌`}
+            >
+              {rack.map((card) => (
+                <button
+                  key={`${turn}-${card}`}
+                  type="button"
+                  className={
+                    card[0] === 'H' || card[0] === 'D' ? 'rack-card red-suit' : 'rack-card'
+                  }
+                  disabled={busy || !future || !playable.has(card)}
+                  aria-label={`${turn} ${card}`}
+                  onClick={() => {
+                    setFuture(null);
+                    setHistory([...history, playCard(state, card, strain)]);
+                  }}
+                >
+                  <span>{symbols[card[0]]}</span>
+                  <b>{card[1]}</b>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {busy && (
+        <p role="status" className="analysis-status">
+          正在計算雙夢家…
         </p>
       )}
-      {state && (
-        <div className="trick-strip">
-          本墩：
-          {state.trick.map((p) => `${p.seat} ${symbols[p.card[0]]}${p.card[1]}`).join(' → ') ||
-            '等待首張'}
-          {state.ns + state.ew === 13 && ' · 打牌完成'}
-        </div>
-      )}
-      <div className="button-row">
-        <label>
-          莊家{' '}
-          <select
-            aria-label="分析莊家"
-            value={declarer}
-            onChange={(e) => {
-              setDeclarer(e.target.value as Seat);
-              setHistory([]);
-            }}
-          >
-            {seats.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          王牌{' '}
-          <select
-            aria-label="分析王牌"
-            value={strain}
-            onChange={(e) => {
-              setStrain(e.target.value);
-              setHistory([]);
-            }}
-          >
-            {strains.map((s) => (
-              <option key={s} value={s}>
-                {symbols[s]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="button subtle" onClick={() => start()} disabled={!table || !!error}>
-          開始／重設試打
-        </button>
-        <button
-          className="button subtle"
-          disabled={history.length < 2}
-          onClick={() => setHistory(history.slice(0, -1))}
-        >
-          上一步
-        </button>
-      </div>
-      <h4>Double dummy · 最佳攻防可得墩數</h4>
-      {table && (
-        <table className="dd-table">
-          <thead>
-            <tr>
-              <th>莊家</th>
-              {strains.map((s) => (
-                <th key={s}>{symbols[s]}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {seats.map((s, i) => (
-              <tr key={s}>
-                <th>{s}</th>
-                {strains.map((t, j) => (
-                  <td key={t}>
-                    <button
-                      title={`以 ${s} 莊家 ${symbols[t]} 開始試打`}
-                      onClick={() => start(t, s)}
-                    >
-                      {table[j][i]}
-                    </button>
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {busy && <p role="status">正在分析…</p>}
       {error && (
         <p role="alert" className="error-text">
           {error}
         </p>
       )}
-      <p className="footnote">
-        點分析表格開始試打，再點手牌；牌下數字是最佳攻防下莊家最終可得墩數。分析只在此裝置執行，不會修改比賽成績。
-      </p>
     </div>
   );
 }

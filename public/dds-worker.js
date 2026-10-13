@@ -5,7 +5,13 @@ self.onmessage = async ({ data }) => {
     const dds = await solver;
     const result =
       data.type === 'table'
-        ? dds.CalcDDTablePBN({ cards: data.cards }).resTable
+        ? (() => {
+            const table = dds.CalcDDTablePBN({ cards: data.cards });
+            return {
+              tricks: table.resTable,
+              par: dds.DealerPar(table, data.dealer, data.vulnerable),
+            };
+          })()
         : dds.SolveBoardPBN(data.deal, -1, 3, 1);
     self.postMessage({ id: data.id, result });
   } catch (error) {

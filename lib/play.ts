@@ -1,14 +1,34 @@
-import { Board, Seat, seats } from './model';
+import { Board, Result, Seat, seats } from './model';
 export const strains = ['S', 'H', 'D', 'C', 'NT'] as const;
 export const ranks = '23456789TJQKA';
+export function bestDeclarerTricks(values: number[], turn: Seat, declarer: Seat) {
+  if (!values.length) return undefined;
+  const sameSide = (turn === 'N' || turn === 'S') === (declarer === 'N' || declarer === 'S');
+  return sameSide ? Math.max(...values) : Math.min(...values);
+}
 export type Play = { seat: Seat; card: string };
 export type PlayState = {
   hands: Board['deal'];
   trick: Play[];
+  lastTrick?: Play[];
   leader: Seat;
   ns: number;
   ew: number;
 };
+export function initialPlay(board: Board, declarer: Seat): PlayState {
+  return {
+    hands: structuredClone(board.deal),
+    trick: [],
+    leader: seats[(seats.indexOf(declarer) + 1) % 4],
+    ns: 0,
+    ew: 0,
+  };
+}
+export function playFromResult(board: Board, result?: Result) {
+  return result && result.status !== 'cancelled' && result.level > 0
+    ? initialPlay(board, result.declarer)
+    : null;
+}
 export function toPbn(hands: Board['deal']) {
   return (
     'N:' +
@@ -51,6 +71,7 @@ export function playCard(state: PlayState, card: string, strain: string): PlaySt
     ).seat;
     s.leader = winner;
     s[winner === 'N' || winner === 'S' ? 'ns' : 'ew']++;
+    s.lastTrick = s.trick;
     s.trick = [];
   }
   return s;

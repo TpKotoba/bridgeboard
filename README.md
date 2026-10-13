@@ -21,12 +21,13 @@ npm run dev:local
 ## 已實作
 
 - 隊制賽：兩房比較、合約分、IMP、WBF 連續 20–0 VP；對戰全部收齊才計入 VP。
-- 雙人賽：同副跨桌 MP、有效 top 加權百分比、NS/EW 合併排名、輪空及缺分。
+- 雙人賽：同副跨桌 MP、CrossIMP 或 ButlerIMP，可為兩種 IMP 模式設定去頭去尾；支援 NS/EW 合併排名、輪空及缺分。
 - 賽事建立、固定循環賽程（可截取輪數）、桌次表、總排名、隊伍／搭檔個別成績、逐副 traveler、四家牌型。
 - 主辦密碼登入、手動收分／更正、版本衝突檢查、原始結果前後差異與稽核。
 - CSV 成績匯入預覽與匯出；雙人賽 movement 匯入／匯出；PBN 匯入／下載；JSON 資料匯出。
-- 未公開牌型不會出現在公開 API；主辦 API 禁用快取。
-- 30 秒輪詢、背景分頁停止請求、完賽停止刷新、錯誤退避；公開 API 15 秒 CDN 快取。
+- 牌型逐副公開；未公開牌型不會出現在公開 API。裁判可設 Cancelled 與 Penalty，並保留稽核。
+- 30 秒輪詢、背景分頁停止請求、完賽停止刷新、錯誤退避；賽事清單可快取 15 秒，賽事詳情不快取以立即反映逐副公開狀態。
+- 手機牌局提供圈數／圈內牌序跳轉、Par／LoTT／HCP／Double Dummy 與輔助鍵盤試打；逐副成績可按桌次或 NS 原始分排序。
 - 寫入時計算排名快照，資料庫以 revision 條件更新，原始資料／快照／稽核一次提交。
 
 ## Vercel 部署
@@ -38,6 +39,7 @@ npm run dev:local
    - `STORAGE_MODE=neon`
    - `DATABASE_URL`：Neon 連線字串（不得使用 NEXT_PUBLIC 前綴）
    - `ADMIN_PASSWORD`：至少 16 字元的獨立隨機密碼
+   - `DIRECTOR_PASSWORD`：至少 16 字元、與主辦不同的裁判密碼，啟用 Cancelled 與 Penalty
    - `SESSION_SECRET`：至少 32 字元隨機字串，可用 `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` 產生
 
 4. 在本機 `.env.local` 設定目標 DB 連線，執行 `npm run db:migrate`，建立 schema。這個步驟不會建立假成績；正式環境登入後自行建立新賽事。
@@ -75,7 +77,7 @@ PBN 支援 Board、Dealer、Vulnerable、Deal 標籤。需一次提供全場完�
 
 同分並列，未套用賽事專屬破同分規則。雙人賽依已收結果暫時計分，單副只有一筆結果時不產生 MP 百分比；輪空沒有成績。正式發布前需全數收齊。
 
-尚未提供裁判平均分／加權調整、罰分、Neuberg 跨組調整、carry-over、Swiss 自動配對、雙人賽 IMP/Butler、多人主辦權限、選手自行登入收分與硬體整合。這些情況不能以假合約代替；需要擴充計分政策後再用於正式賽事。
+尚未提供裁判平均分／加權調整、Neuberg 跨組調整、carry-over、Swiss 自動配對、多人主辦權限、選手自行登入收分與硬體整合。這些情況不能以假合約代替；需要擴充計分政策後再用於正式賽事。CrossIMP、ButlerIMP、Cancelled 與 Penalty 的明確規則見 [計分與裁判操作](docs/ADVANCED_SCORING.md)。
 
 每場最多 32 組、15 輪、128 副；每次匯入 200 KB／2,000 筆結果。MVP 使用 PostgreSQL 每場一個 JSONB 文件與 CAS 版本更新，保留所有稽核；大型多年賽事需拆分正規化資料表與歸檔。
 
