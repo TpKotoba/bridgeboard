@@ -61,6 +61,7 @@ export function createEvent(
   const e: BridgeEvent = {
     id,
     name: data.name,
+    prefix: data.prefix ?? '',
     kind: data.kind,
     date: data.date,
     venue: data.venue,
@@ -178,6 +179,8 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     )
       throw new DomainError('有牌只剩一桌有效結果，無法比較；請裁判處理後再結束。');
     e.status = command.status;
+    if (command.name !== undefined) e.name = command.name;
+    if (command.prefix !== undefined) e.prefix = command.prefix;
     if (command.awardPlaces !== undefined) e.awardPlaces = command.awardPlaces;
     if (command.publishBoards !== undefined && command.publishBoards !== e.publishBoards)
       throw new DomainError('請使用每副牌的公開開關。');

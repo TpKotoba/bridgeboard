@@ -57,6 +57,7 @@ export type Audit = {
 export type BridgeEvent = {
   id: string;
   name: string;
+  prefix?: string;
   kind: Kind;
   date: string;
   venue: string;
@@ -81,6 +82,7 @@ export type BridgeEvent = {
 export const createSchema = z
   .object({
     name: z.string().trim().min(2).max(80),
+    prefix: z.string().trim().max(80).optional(),
     kind: z.enum(['teams', 'pairs']),
     pairMethod: z.enum(['mp', 'crossimp', 'butler']).optional(),
     trim: z.enum(['none', 'one', 'ten-percent']).optional(),
@@ -158,6 +160,8 @@ export const mutationSchema = z.discriminatedUnion('action', [
       status: z.enum(['live', 'finished']),
       publishBoards: z.boolean().optional(),
       awardPlaces: z.number().int().min(0).max(32).optional(),
+      name: z.string().trim().min(2).max(80).optional(),
+      prefix: z.string().trim().max(80).optional(),
     })
     .strict(),
   z

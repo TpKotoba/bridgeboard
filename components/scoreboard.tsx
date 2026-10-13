@@ -10,6 +10,8 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  Eye,
+  EyeOff,
   Flag,
   LayoutDashboard,
   LoaderCircle,
@@ -51,6 +53,8 @@ import {
 type EventSummary = {
   id: string;
   name: string;
+  prefix?: string;
+  updatedAt?: string;
   kind: Kind;
   pairMethod?: 'mp' | 'crossimp' | 'butler';
   date: string;
@@ -207,6 +211,13 @@ export default function Scoreboard() {
     [mode, setMode] = useState('demo');
   const [director, setDirector] = useState(false);
   const [sessionExpanded, setSessionExpanded] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showEvents, setShowEvents] = useState(false);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(''), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [showLogin, setShowLogin] = useState(false),
     [showCreate, setShowCreate] = useState(false),
     [password, setPassword] = useState(''),
@@ -324,6 +335,7 @@ export default function Scoreboard() {
     } catch {}
   }
   function openAdmin() {
+    setShowPassword(false);
     if (!admin) setShowLogin(true);
     else if (!id && director) setShowCreate(true);
     else setTab('admin');
@@ -340,6 +352,7 @@ export default function Scoreboard() {
       setAdmin(true);
       setDirector(session.director);
       setPassword('');
+      setShowPassword(false);
       setShowLogin(false);
       setTab('admin');
       if (!id && session.director) setShowCreate(true);
@@ -472,7 +485,7 @@ export default function Scoreboard() {
             <span className="tiny-suits">
               ♠ <b>♥ ♦</b> ♣
             </span>
-            <p>每一副牌，都值得記錄。</p>
+            <p>再怎麼說橋牌還是太 Creepy 了</p>
             <small>Bridgeboard · MVP 0.1</small>
           </div>
         </div>
@@ -485,12 +498,22 @@ export default function Scoreboard() {
           </div>
           <div className="top-actions">
             {admin ? (
-              <div className={`session-control ${sessionExpanded ? 'expanded' : ''}`}
-                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setSessionExpanded(false); }}
-                onKeyDown={(e) => { if (e.key === 'Escape') setSessionExpanded(false); }}>
-                <button className="session-role" aria-expanded={sessionExpanded} aria-controls="session-logout"
-                  onClick={() => setSessionExpanded((expanded) => !expanded)}>
-                  {director ? '裁判' : '賽務'}
+              <div
+                className={`session-control ${sessionExpanded ? 'expanded' : ''}`}
+                onBlur={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget)) setSessionExpanded(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setSessionExpanded(false);
+                }}
+              >
+                <button
+                  className="session-role"
+                  aria-expanded={sessionExpanded}
+                  aria-controls="session-logout"
+                  onClick={() => setSessionExpanded((expanded) => !expanded)}
+                >
+                  {!sessionExpanded && '登入身分：'}{director ? '裁判' : '賽務'}
                 </button>
                 <button
                   id="session-logout"
@@ -509,26 +532,25 @@ export default function Scoreboard() {
                 </button>
               </div>
             ) : (
-              <button className="button subtle login-button" onClick={openAdmin}>
+              <button className="session-role session-login" onClick={openAdmin}>
                 登入
               </button>
             )}
           </div>
         </header>
         <main>
-          <div className="page-heading">
-            <div>
-              <div className="eyebrow">TOURNAMENT CENTER</div>
-              <h1>橋藝競賽記分板</h1>
-              <p>還在用過時的 Excel 試算表舉辦比賽嗎？</p>
+            <div className="page-heading">
+              <div>
+                <h1>橋藝競賽記分板</h1>
+                <p>還在用過時的 Excel 試算表舉辦比賽嗎？</p>
+              </div>
+              {admin && (
+                <button className="button subtle admin-menu-button" onClick={openAdmin}>
+                  <Settings2 size={16} />
+                  {director ? '裁判功能表' : '賽務功能表'}
+                </button>
+              )}
             </div>
-            {admin && (
-              <button className="button subtle admin-menu-button" onClick={openAdmin}>
-                <Settings2 size={16} />
-                {director ? '裁判功能表' : '賽務功能表'}
-              </button>
-            )}
-          </div>
           {error && (
             <div className="alert error" role="alert">
               {error}
@@ -550,8 +572,8 @@ export default function Scoreboard() {
             </div>
           ) : (
             <>
-              <div className="event-strip">
-                {events.map((e) => (
+              <div className={`event-strip ${events.length > 3 ? 'compact-event-strip' : ''}`}>
+                {(events.length > 3 ? events.slice(0, 2) : events).map((e) => (
                   <button
                     key={e.id}
                     className={`event-option ${id === e.id ? 'selected' : ''}`}
@@ -564,7 +586,7 @@ export default function Scoreboard() {
                       {e.kind === 'teams' ? <Flag size={20} /> : <Users size={20} />}
                     </span>
                     <span>
-                      <strong>{e.name}</strong>
+                      <strong>{[e.prefix, e.name].filter(Boolean).join(' ')}</strong>
                       <small>
                         {e.kind === 'teams'
                           ? '隊制賽 · IMP / VP'
@@ -577,6 +599,13 @@ export default function Scoreboard() {
                     </span>
                   </button>
                 ))}
+                {events.length > 3 && (
+                  <button className="event-option more-events" onClick={() => setShowEvents(true)}>
+                    <span className="event-icon more-events-icon"><LayoutDashboard size={20} /></span>
+                    <span><strong>顯示更多比賽</strong><small>還有 {events.length - 2} 場賽事，查看完整列表</small></span>
+                    <ChevronRight size={18} className="more-events-arrow" />
+                  </button>
+                )}
               </div>
               {!events.length && (
                 <div className="empty">
@@ -598,21 +627,23 @@ export default function Scoreboard() {
                 <>
                   <section className="event-heading">
                     <div className="event-intro">
-                      <div className="section-kicker">
-                        {event.demo ? 'SAMPLE EVENT' : 'OFFICIAL WORKSPACE'} <span>／</span>{' '}
-                        {event.kind === 'teams' ? 'TEAM TOURNAMENT' : 'PAIRS TOURNAMENT'}
-                      </div>
+                      <div className="section-kicker">NOW IN THE SPOTLIGHT</div>
                       <h2>
+                        <button className="event-title-button" popoverTarget="event-information" onClick={(e) => positionDetail(e.currentTarget)} aria-label="查看比賽資訊">
                         {event.name.split(/\s+/).map((part, index) => (
                           <span className="event-name-part" key={index}>
                             {index > 0 ? ' ' : ''}
                             {part}
                           </span>
                         ))}
+                        </button>
                       </h2>
+                      <div id="event-information" key={event.id} popover="auto" className="player-detail-popover event-information">
+                        <strong>{[event.prefix, event.name].filter(Boolean).join(' ')}</strong>
+                        <div>日期：{event.date}</div>
+                        <div>地點：{event.venue || '線上記分'}</div>
+                      </div>
                       <div className="event-meta">
-                        <span>{event.date}</span>
-                        <span>{event.venue || '線上記分'}</span>
                         <span className="event-format">
                           {event.kind === 'teams'
                             ? 'WBF 20–0 VP'
@@ -686,7 +717,7 @@ export default function Scoreboard() {
                           <p>
                             {event.kind === 'teams'
                               ? 'VP 僅計入兩房全部收齊的對戰；同分並列。'
-                              : '依有效結果暫時計分；Cancelled 不參與比較，Penalty 扣除後排名，同分並列。'}
+                              : '依有效結果暫時計分，排名包含罰分計算，同分並列。'}
                           </p>
                         </div>
                         <label className="search">
@@ -1589,14 +1620,20 @@ export default function Scoreboard() {
           <form onSubmit={login}>
             <label className="field">
               裁判／賽務密碼
+              <span className="password-input">
               <input
                 autoFocus
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
+              <button type="button" className="password-toggle" aria-label={showPassword ? '隱藏密碼' : '顯示密碼'} aria-pressed={showPassword}
+                onClick={() => setShowPassword((visible) => !visible)}>
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+              </span>
             </label>
             {loginError && (
               <p className="error-text" role="alert">
@@ -1620,6 +1657,30 @@ export default function Scoreboard() {
             setNotice('賽事已建立。請先核對賽程與匯入牌型，再開始收分。');
           }}
         />
+      )}
+      {showEvents && (
+        <Modal title="所有比賽" onClose={() => setShowEvents(false)}>
+          <div className="all-events-list">
+            {events.map((item) => (
+              <button
+                key={item.id}
+                className={`event-option ${id === item.id ? 'selected' : ''}`}
+                onClick={() => {
+                  setId(item.id);
+                  setShowEvents(false);
+                  if (tab === 'admin') setTab('standings');
+                }}
+              >
+                <span>
+                  <strong>{[item.prefix, item.name].filter(Boolean).join(' ')}</strong>
+                  <small>
+                    {item.date} · {item.status === 'finished' ? '已結束' : '進行中'}
+                  </small>
+                </span>
+              </button>
+            ))}
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -1777,6 +1838,7 @@ function CreateDialog({
           pairMethod: kind === 'pairs' ? method : 'mp',
           trim: kind === 'pairs' && method !== 'mp' ? form.get('trim') : 'none',
           name: form.get('name'),
+          prefix: form.get('prefix'),
           date: form.get('date'),
           venue: form.get('venue'),
           rounds: Number(form.get('rounds')),
@@ -1844,7 +1906,7 @@ function CreateDialog({
           </div>
         )}
         <label className="field">
-          賽事名稱
+          比賽名稱（不含前綴）
           <input
             name="name"
             required
@@ -1852,6 +1914,10 @@ function CreateDialog({
             maxLength={80}
             placeholder="例如：秋季俱樂部邀請賽"
           />
+        </label>
+        <label className="field">
+          比賽前綴（選填）
+          <input name="prefix" maxLength={80} placeholder="例如：臺灣大學橋藝社 114-1" />
         </label>
         <div className="form-grid">
           <label className="field">
@@ -2502,6 +2568,42 @@ function AdminPanel({
         )}
         {section === 'publish' && (
           <>
+            {event.canDirect && (
+              <form
+                className="event-identity-form"
+                key={`${event.name}-${event.prefix ?? ''}`}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = new FormData(e.currentTarget);
+                  void save({
+                    action: 'settings',
+                    status: event.status,
+                    name: String(form.get('name')),
+                    prefix: String(form.get('prefix')),
+                    reason: '修改比賽名稱與前綴',
+                  });
+                }}
+              >
+                <h4>比賽識別資訊</h4>
+                <label className="field">
+                  比賽前綴（選填）
+                  <input name="prefix" maxLength={80} defaultValue={event.prefix ?? ''} />
+                </label>
+                <label className="field">
+                  比賽名稱（不含前綴）
+                  <input
+                    name="name"
+                    minLength={2}
+                    maxLength={80}
+                    required
+                    defaultValue={event.name}
+                  />
+                </label>
+                <button className="button subtle" disabled={busy}>
+                  儲存名稱與前綴
+                </button>
+              </form>
+            )}
             {event.canDirect && (
               <>
                 <h4>依牌組公開牌型</h4>

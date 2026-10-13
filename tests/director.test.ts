@@ -147,3 +147,14 @@ test('award settings preserve scores and zero disables awards', () => {
   s.apply({ action: 'settings', status: 'live', awardPlaces: 0 });
   assert.equal(s.stored.event.awardPlaces, 0);
 });
+
+test('event prefix and short name remain separate and can be updated without changing results', () => {
+  const s = setup();
+  const projection = structuredClone(s.stored.projection);
+  s.apply({ action: 'settings', status: 'live', prefix: '臺灣大學橋藝社 114-1', name: '老少盃' });
+  assert.equal(s.stored.event.prefix, '臺灣大學橋藝社 114-1');
+  assert.equal(s.stored.event.name, '老少盃');
+  assert.deepEqual(s.stored.projection, projection);
+  s.apply({ action: 'settings', status: 'live', prefix: '' });
+  assert.equal(s.stored.event.prefix, '');
+});

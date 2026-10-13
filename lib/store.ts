@@ -46,7 +46,7 @@ function sql() {
 export async function listEvents(): Promise<StoredEvent[]> {
   if (storageMode() === 'demo') return seedEvents();
   if (storageMode() === 'local') return localRead();
-  const rows = await sql()`SELECT document FROM bridge_events ORDER BY created_at DESC LIMIT 50`;
+  const rows = await sql()`SELECT document FROM bridge_events ORDER BY updated_at DESC LIMIT 50`;
   return rows.map((r) => r.document as StoredEvent);
 }
 export async function getEvent(id: string): Promise<StoredEvent> {

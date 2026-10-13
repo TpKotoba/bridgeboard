@@ -12,21 +12,25 @@ export async function GET() {
     return NextResponse.json(
       {
         storage: storageMode(),
-        events: data.map(({ event: e, projection: p }) => ({
-          id: e.id,
-          name: e.name,
-          kind: e.kind,
-          pairMethod: e.pairMethod ?? 'mp',
-          date: e.date,
-          venue: e.venue,
-          status: e.status,
-          demo: e.demo,
-          participants: e.participants.length,
-          rounds: e.rounds,
-          boards: e.boards.length,
-          received: p.received,
-          expected: p.expected,
-        })),
+        events: [...data]
+          .sort((a, b) => Date.parse(b.event.updatedAt) - Date.parse(a.event.updatedAt))
+          .map(({ event: e, projection: p }) => ({
+            id: e.id,
+            name: e.name,
+            prefix: e.prefix ?? '',
+            updatedAt: e.updatedAt,
+            kind: e.kind,
+            pairMethod: e.pairMethod ?? 'mp',
+            date: e.date,
+            venue: e.venue,
+            status: e.status,
+            demo: e.demo,
+            participants: e.participants.length,
+            rounds: e.rounds,
+            boards: e.boards.length,
+            received: p.received,
+            expected: p.expected,
+          })),
       },
       { headers: { 'Cache-Control': 'no-store' } },
     );
