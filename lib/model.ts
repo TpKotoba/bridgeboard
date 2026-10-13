@@ -8,6 +8,7 @@ export type Vulnerability = 'None' | 'NS' | 'EW' | 'All';
 export type Participant = { id: string; name: string; players: string };
 export type Board = {
   number: number;
+  group?: string;
   dealer: Seat;
   vulnerability: Vulnerability;
   deal: Record<Seat, string[]>;
@@ -16,7 +17,7 @@ export type Board = {
 export type Assignment = {
   id: string;
   round: number;
-  table: number;
+  table: number | string;
   room: 'open' | 'closed' | 'pairs';
   ns: string;
   ew: string;

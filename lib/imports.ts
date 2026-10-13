@@ -111,15 +111,15 @@ export function parseMovement(text: string, e: BridgeEvent): Assignment[] {
     tables = new Set<string>();
   for (const [i, r] of rows.entries()) {
     const round = Number(r.round),
-      table = Number(r.table),
+      tableLabel = (r.table ?? '').trim(),
+      table = /^\d+$/.test(tableLabel) ? Number(tableLabel) : tableLabel,
       boards = (r.boards ?? '').split(';').map(Number);
     if (
       !Number.isInteger(round) ||
       round < 1 ||
       round > e.rounds ||
-      !Number.isInteger(table) ||
-      table < 1 ||
-      table > 32
+      !/^[A-Za-z0-9][A-Za-z0-9_-]{0,15}$/.test(tableLabel) ||
+      (typeof table === 'number' && (!Number.isSafeInteger(table) || table < 1))
     )
       throw new Error(`第 ${i + 2} 列輪次或桌號錯誤`);
     if (r.ns === r.ew || ![r.ns, r.ew].every((id) => e.participants.some((p) => p.id === id)))
@@ -175,6 +175,7 @@ export function parsePbn(text: string): Board[] {
   return records.map((record) => {
     const tag = (name: string) => record.match(new RegExp(`\\[${name}\\s+"([^"]*)"\\]`))?.[1];
     const number = Number(tag('Board')),
+      group = tag('BridgeboardGroup'),
       dealer = tag('Dealer') as Seat,
       vulnerability = tag('Vulnerable') as Vulnerability;
     if (
@@ -186,6 +187,8 @@ export function parsePbn(text: string): Board[] {
     )
       throw new Error('PBN 牌號、發牌者或身價錯誤／重複');
     numbers.add(number);
+    if (group !== undefined && (!group.trim() || group.length > 40))
+      throw new Error(`牌 ${number} 的 BridgeboardGroup 必須為 1–40 字元`);
     const raw = tag('Deal')?.match(/^([NESW]):(.+)$/);
     if (!raw) throw new Error(`牌 ${number} 缺少完整 Deal`);
     const hands = raw[2].trim().split(/\s+/);
@@ -207,7 +210,7 @@ export function parsePbn(text: string): Board[] {
       deal[seats[(seats.indexOf(raw[1] as Seat) + i) % 4]] = cards;
     });
     if (new Set(Object.values(deal).flat()).size !== 52) throw new Error('牌型包含重複牌');
-    return { number, dealer, vulnerability, deal };
+    return { number, ...(group === undefined ? {} : { group: group.trim() }), dealer, vulnerability, deal };
   });
 }
 export function exportPbn(e: Pick<BridgeEvent, 'boards'>) {
@@ -215,7 +218,7 @@ export function exportPbn(e: Pick<BridgeEvent, 'boards'>) {
     .filter((b) => b.deal.N.length === 13)
     .map(
       (b) =>
-        `[Board "${b.number}"]\n[Dealer "${b.dealer}"]\n[Vulnerable "${b.vulnerability}"]\n[Deal "N:${seats
+        `[Board "${b.number}"]${b.group ? `\n[BridgeboardGroup "${b.group}"]` : ''}\n[Dealer "${b.dealer}"]\n[Vulnerable "${b.vulnerability}"]\n[Deal "N:${seats
           .map((s) =>
             ['S', 'H', 'D', 'C']
               .map((suit) =>

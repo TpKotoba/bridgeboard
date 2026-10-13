@@ -1810,6 +1810,16 @@ select {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+table .participant-link:hover,
+table .participant-link:focus-visible,
+table .text-button:hover,
+table .text-button:focus-visible,
+table .contract-link:focus-visible,
+table a:hover,
+table a:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .contract-link:focus-visible {
   outline: 2px solid #7a9c85;
   outline-offset: 4px;
@@ -1825,6 +1835,11 @@ select {
 .player-results td:first-child {
   font-size: 11px;
   color: #6d7872;
+}
+.player-results .player-round {
+  color: #27332f;
+  font-size: 1.1em;
+  font-weight: 600;
 }
 .player-results .score-low {
   color: #b33a3d;
@@ -1884,7 +1899,9 @@ select {
 }
 /* Share content-proportional columns across every viewport. */
 .player-detail-popover {
-  margin: auto;
+  margin: 0;
+  inset: auto;
+  position: fixed;
   max-width: calc(100vw - 32px);
   padding: 16px 20px;
   border: 1px solid #cbd8cf;
@@ -2088,6 +2105,117 @@ select {
   }
 }
 
+table th[aria-sort='ascending'] > button,
+table th[aria-sort='descending'] > button {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.round-pairs-table {
+  width: 100%;
+  table-layout: fixed;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.round-pairs-table th,
+.round-pairs-table td {
+  padding: 14px 6px;
+  text-align: center;
+}
+.round-pairs-table th:first-child {
+  width: 12%;
+}
+.round-pairs-table th:nth-child(2),
+.round-pairs-table th:nth-child(3) {
+  width: 29%;
+}
+.round-pairs-table th:nth-child(4) {
+  width: 17%;
+}
+.round-pairs-table th:last-child {
+  width: 13%;
+}
+.round-pairs-table .participant-link {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.round-pairs-table .participant-link > span {
+  min-width: 0;
+  text-align: left;
+}
+.round-pairs-table .round-pair-summary {
+  white-space: nowrap;
+  letter-spacing: 0;
+  font-size: clamp(8px, 2.2vw, 9px);
+}
+.round-pairs-table .text-button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+  .round-pairs-table th,
+  .round-pairs-table td {
+    padding: 12px 3px;
+    font-size: 11px;
+  }
+  .round-pairs-table .participant-link {
+    font-size: 12px;
+  }
+}
+.ranking-table .participant-link > span {
+  text-align: left;
+}
+.ranking-table .participant-link small {
+  text-align: left;
+  min-height: 1.4em;
+}
+.ranking-table {
+  table-layout: auto;
+  white-space: normal;
+}
+.ranking-table th:nth-child(n),
+.ranking-table td:nth-child(n) {
+  width: auto;
+  padding: 16px 8px;
+  text-align: center;
+}
+.ranking-table .participant-link {
+  justify-content: center;
+  text-align: center;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+.ranking-table .rank {
+  justify-content: center;
+}
+.ranking-table td:nth-child(1),
+.ranking-table td:nth-child(3),
+.ranking-table td:nth-child(4) {
+  white-space: nowrap;
+}
+.ranking-table td.big-score {
+  font-size: clamp(16px, 2.2vw, 26px);
+}
+@media (max-width: 560px) {
+  .ranking-table th:nth-child(n),
+  .ranking-table td:nth-child(n) {
+    padding: 12px 4px;
+  }
+  .ranking-table .participant-link {
+    font-size: 12px;
+  }
+  .ranking-table .rank {
+    gap: 3px;
+    font-size: 12px;
+  }
+  .ranking-table .rank svg {
+    width: 11px;
+  }
+}
 /* Compact four-hand board. Each suit stays on one line, including 13-card suits. */
 .board-layout {
   grid-template-columns: minmax(0, 1fr);
@@ -2434,7 +2562,6 @@ select {
 }
 .par-corner strong.your-contract,
 .board-metadata span.your-contract {
-  font-size: min(20px, 12cqw);
   white-space: nowrap;
 }
 .your-contract .contract-outcome {
@@ -2661,7 +2788,7 @@ select {
 }
 .event-heading h2 {
   text-wrap: balance;
-  grid-column: 1;
+  grid-column: 1 / -1;
   grid-row: 2;
   min-width: 0;
 }
@@ -2674,11 +2801,15 @@ select {
 }
 .event-heading > .button {
   grid-column: 2;
-  grid-row: 2;
-  align-self: center;
+  grid-row: 3;
+  align-self: start;
 }
 .event-heading .event-meta {
-  grid-column: 1 / -1;
+  grid-column: 1;
+  grid-row: 3;
+  align-self: start;
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: block;
   margin-top: 0;
   line-height: 1.8;

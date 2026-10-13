@@ -179,8 +179,10 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     e.boards = e.boards.map((b) => ({ ...b, published: b.published ?? e.publishBoards }));
     const b = e.boards.find((b) => b.number === command.board);
     if (!b) throw new DomainError('找不到牌號');
-    detail = `B${b.number}: ${b.published ? '公開' : '隱藏'} → ${command.published ? '公開' : '隱藏'}`;
-    b.published = command.published;
+    const group = b.group;
+    const targets = group ? e.boards.filter((board) => board.group === group) : [b];
+    detail = `${targets.map((board) => `B${board.number}`).join('、')}: ${b.published ? '公開' : '隱藏'} → ${command.published ? '公開' : '隱藏'}`;
+    for (const target of targets) target.published = command.published;
   } else if (command.action === 'penalty') {
     if (e.status === 'finished') throw new DomainError('請先重新開放賽事');
     if (!e.participants.some((p) => p.id === command.participantId))
@@ -317,8 +319,10 @@ export function seedEvents(): StoredEvent[] {
     const lastRound = e.kind === 'teams' ? 3 : 9;
     for (const a of e.assignments)
       for (const board of a.boards) {
-        if (a.round > lastRound || (a.round === lastRound && (a.table + board) % 3 === 0)) continue;
-        const n = board * 13 + a.table * 7 + (a.room === 'closed' ? 3 : 0);
+        const tableIndex = Number(a.table) || e.assignments.indexOf(a) + 1;
+        if (a.round > lastRound || (a.round === lastRound && (tableIndex + board) % 3 === 0))
+          continue;
+        const n = board * 13 + tableIndex * 7 + (a.room === 'closed' ? 3 : 0);
         const level = [3, 4, 2, 3, 4, 6][n % 6],
           strain = (['NT', 'S', 'H', 'D', 'S', 'NT'] as const)[n % 6];
         const r = {

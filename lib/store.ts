@@ -59,6 +59,19 @@ export async function getEvent(id: string): Promise<StoredEvent> {
   if (!rows.length) throw new DomainError('找不到賽事', 404);
   return rows[0].document as StoredEvent;
 }
+export async function deleteEvent(id: string) {
+  if (storageMode() === 'demo') throw new DomainError('展示模式無法刪除賽事。', 503);
+  if (storageMode() === 'local')
+    return localLock(async () => {
+      const data = await localRead();
+      const index = data.findIndex((item) => item.event.id === id);
+      if (index < 0) throw new DomainError('找不到賽事', 404);
+      data.splice(index, 1);
+      await localSave(data);
+    });
+  const rows = await sql()`DELETE FROM bridge_events WHERE id=${id} RETURNING id`;
+  if (!rows.length) throw new DomainError('找不到賽事', 404);
+}
 export async function insertEvent(event: BridgeEvent) {
   if (storageMode() === 'demo') throw new DomainError('展示模式無法儲存，請先設定資料庫。', 503);
   const stored = { event, projection: project(event), requests: [] };

@@ -343,7 +343,7 @@ export function DealExplorer({
         </div>
         <section className="analysis-corner hcp-corner" aria-label="發牌、身價與大牌點">
           <div className="hcp-metadata">
-            <span>Dir: {board.dealer}</span>
+            <span>Dir: {{ N: 'North', E: 'East', S: 'South', W: 'West' }[board.dealer]}</span>
             <span>Vul: {board.vulnerability}</span>
           </div>
           <div className="hcp-compass">
@@ -413,6 +413,7 @@ export function DealExplorer({
                 setHistory([]);
                 setFuture(null);
                 setBusy(false);
+                onManualTrial?.();
               }}
               aria-label="離開試打"
               title="離開試打"

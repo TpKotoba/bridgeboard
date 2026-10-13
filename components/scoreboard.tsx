@@ -141,7 +141,27 @@ function Contract({ result }: { result?: Result }) {
   );
 }
 export default function Scoreboard() {
+  function positionDetail(trigger: HTMLButtonElement) {
+    const target = trigger.getAttribute('popovertarget');
+    requestAnimationFrame(() => {
+      const popup = target ? document.getElementById(target) : null;
+      if (!popup || !popup.matches(':popover-open')) return;
+      const anchor = trigger.getBoundingClientRect();
+      const box = popup.getBoundingClientRect();
+      const left = Math.max(
+        8,
+        Math.min(anchor.left + anchor.width / 2 - box.width / 2, window.innerWidth - box.width - 8),
+      );
+      const top =
+        anchor.bottom + box.height + 8 <= window.innerHeight
+          ? anchor.bottom + 6
+          : Math.max(8, anchor.top - box.height - 6);
+      popup.style.left = `${left}px`;
+      popup.style.top = `${top}px`;
+    });
+  }
   const [resultSort, setResultSort] = useState('table-asc');
+  const [playerSort, setPlayerSort] = useState<'round' | 'board' | 'opponent'>('round');
   const [travellerSide, setTravellerSide] = useState<'ns' | 'ew'>('ns');
   const [selectedResult, setSelectedResult] = useState('');
   const [resultSelection, setResultSelection] = useState(0);
@@ -163,7 +183,7 @@ export default function Scoreboard() {
             )
           }
         >
-          {label} <span aria-hidden="true">{active ? (descending ? '↓' : '↑') : '↕'}</span>
+          {label}
         </button>
       </th>
     );
@@ -318,6 +338,25 @@ export default function Scoreboard() {
     }
   }
   const name = (pid: string) => event?.participants.find((p) => p.id === pid)?.name ?? pid;
+  const playerId = person || event?.participants[0]?.id;
+  let playerBand = 0;
+  const playerRows = (event?.assignments ?? [])
+    .filter((a) => a.ns === playerId || a.ew === playerId)
+    .flatMap((a) => a.boards.map((b) => ({ a, b })))
+    .sort((left, right) => {
+      if (playerSort === 'board')
+        return left.b - right.b || left.a.round - right.a.round;
+      if (playerSort === 'opponent') {
+        const opponent = (a: typeof left.a) => a.ns === playerId ? a.ew : a.ns;
+        const order = opponent(left.a).localeCompare(opponent(right.a), 'en', { numeric: true });
+        if (order) return order;
+      }
+      return left.a.round - right.a.round || left.b - right.b;
+    })
+    .map((row, index, rows) => {
+      if (index > 0 && row.a.round !== rows[index - 1].a.round) playerBand++;
+      return { ...row, shaded: playerBand % 2 === 1 };
+    });
   const selectedBoard = event?.boards.find((b) => b.number === board) ?? event?.boards[0];
   const boardRounds = event ? getBoardRounds(event) : [];
   const boardRound =
@@ -345,7 +384,8 @@ export default function Scoreboard() {
           .sort((a, b) => {
             if (resultSort.startsWith('table'))
               return (
-                (a.table - b.table || a.round - b.round) * (resultSort.endsWith('desc') ? -1 : 1)
+                (String(a.table).localeCompare(String(b.table), 'en', { numeric: true }) ||
+                  a.round - b.round) * (resultSort.endsWith('desc') ? -1 : 1)
               );
             const value = (assignment: Assignment) => {
               const key = resultKey(assignment.id, selectedBoard.number),
@@ -638,15 +678,7 @@ export default function Scoreboard() {
                             <tr>
                               <th className="rank-col">排名</th>
                               <th>{event.kind === 'teams' ? '隊伍' : '搭檔'}</th>
-                              <th>已計／安排牌數</th>
-                              <th>
-                                {event.kind === 'teams'
-                                  ? '淨 IMP'
-                                  : pairMethod === 'mp'
-                                    ? '累計 MP'
-                                    : '累計 IMP'}
-                              </th>
-                              <th>Penalty</th>
+                              <th>完成／安排牌數</th>
                               <th className="score-col">
                                 {event.kind === 'teams'
                                   ? '累計 VP'
@@ -689,11 +721,6 @@ export default function Scoreboard() {
                                         setTab('players');
                                       }}
                                     >
-                                      <span className="participant-emblem">
-                                        {event.kind === 'teams'
-                                          ? s.name.slice(0, 1)
-                                          : s.id.slice(1).padStart(2, '0')}
-                                      </span>
                                       <span>
                                         {s.name}
                                         <small>
@@ -707,20 +734,40 @@ export default function Scoreboard() {
                                       {s.played} <span className="muted">/ {s.total}</span>
                                     </span>
                                   </td>
-                                  <td className="mono">{number(s.secondary)}</td>
-                                  <td className="mono">
-                                    {number(s.penalty ?? 0)}{' '}
-                                    {event.kind === 'teams'
-                                      ? 'VP'
-                                      : pairMethod === 'mp'
-                                        ? '百分點'
-                                        : 'IMP'}
-                                  </td>
                                   <td className="big-score">
-                                    {number(s.score)}
-                                    <small>
-                                      {event.kind === 'pairs' && pairMethod === 'mp' ? '%' : ''}
-                                    </small>
+                                    <button
+                                      className="contract-link"
+                                      popoverTarget={`standing-${s.id}`}
+                                      onClick={(e) => positionDetail(e.currentTarget)}
+                                      aria-label={`查看 ${s.name} 總分明細`}
+                                    >
+                                      {number(s.score)}
+                                      <small>
+                                        {event.kind === 'pairs' && pairMethod === 'mp' ? '%' : ''}
+                                      </small>
+                                    </button>
+                                    <div
+                                      id={`standing-${s.id}`}
+                                      popover="auto"
+                                      className="player-detail-popover"
+                                    >
+                                      <div>
+                                        {event.kind === 'teams'
+                                          ? '淨 IMP'
+                                          : pairMethod === 'mp'
+                                            ? '累計 MP'
+                                            : '累計 IMP'}
+                                        ：{number(s.secondary)}
+                                      </div>
+                                      <div>
+                                        Penalty：{number(s.penalty ?? 0)}{' '}
+                                        {event.kind === 'teams'
+                                          ? 'VP'
+                                          : pairMethod === 'mp'
+                                            ? '百分點'
+                                            : 'IMP'}
+                                      </div>
+                                    </div>
                                   </td>
                                   <td>
                                     <button
@@ -814,14 +861,14 @@ export default function Scoreboard() {
                         </div>
                       ) : (
                         <div className="table-scroll">
-                          <table>
+                          <table className="round-pairs-table">
                             <thead>
                               <tr>
                                 <th>桌號</th>
                                 <th>南北 NS</th>
                                 <th>東西 EW</th>
                                 <th>牌號</th>
-                                <th>已收</th>
+                                <th>完成</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -830,8 +877,29 @@ export default function Scoreboard() {
                                 .map((a) => (
                                   <tr key={a.id}>
                                     <td className="mono">{a.table}</td>
-                                    <td>{name(a.ns)}</td>
-                                    <td>{name(a.ew)}</td>
+                                    {[a.ns, a.ew].map((id) => {
+                                      const standing = event.projection.standings.find((s) => s.id === id);
+                                      const score = standing?.score;
+                                      return (
+                                        <td key={id}>
+                                          <button
+                                            className="participant-link"
+                                            onClick={() => {
+                                              setPerson(id);
+                                              setTab('players');
+                                            }}
+                                          >
+                                            <span>
+                                              {name(id)}
+                                              <small className="round-pair-summary">
+                                                {id.toUpperCase()} /{' '}
+                                                {score == null ? '—' : `${pairMethod !== 'mp' && score >= 0 ? '+' : ''}${number(score)}${pairMethod === 'mp' ? '%' : ' IMP'}`}
+                                              </small>
+                                            </span>
+                                          </button>
+                                        </td>
+                                      );
+                                    })}
                                     <td>
                                       <button
                                         className="text-button"
@@ -840,7 +908,10 @@ export default function Scoreboard() {
                                           setTab('boards');
                                         }}
                                       >
-                                        {a.boards.join(', ')}
+                                        {a.boards.length >= 3 &&
+                                        a.boards.every((b, i) => i === 0 || b === a.boards[i - 1] + 1)
+                                          ? `${a.boards[0]}-${a.boards[a.boards.length - 1]}`
+                                          : a.boards.join(', ')}
                                       </button>
                                     </td>
                                     <td>
@@ -966,14 +1037,6 @@ export default function Scoreboard() {
                           ) : (
                             <DealDiagram board={selectedBoard} />
                           )}
-                          <div className="deal-caption">
-                            {seatNames[selectedBoard.dealer]}家發牌 ·{' '}
-                            {event.demo
-                              ? '模擬牌型'
-                              : selectedBoard.published
-                                ? '已公開牌型'
-                                : '牌型尚未公開'}
-                          </div>
                           {hasDeal(selectedBoard) && selectedBoard.deal.N.length > 0 && (
                             <button
                               className="button subtle full"
@@ -1237,10 +1300,22 @@ export default function Scoreboard() {
                         <table>
                           <thead>
                             <tr>
-                              <th>輪次／桌</th>
-                              <th>牌號</th>
+                              <th aria-sort={playerSort === 'round' ? 'ascending' : 'none'}>
+                                <button className="contract-link" onClick={() => setPlayerSort('round')}>
+                                  輪次／桌
+                                </button>
+                              </th>
+                              <th aria-sort={playerSort === 'board' ? 'ascending' : 'none'}>
+                                <button className="contract-link" onClick={() => setPlayerSort('board')}>
+                                  牌號
+                                </button>
+                              </th>
                               <th>方向</th>
-                              <th>對手</th>
+                              <th aria-sort={playerSort === 'opponent' ? 'ascending' : 'none'}>
+                                <button className="contract-link" onClick={() => setPlayerSort('opponent')}>
+                                  對手
+                                </button>
+                              </th>
                               <th>合約</th>
                               <th>己方原始分</th>
                               <th>
@@ -1253,14 +1328,7 @@ export default function Scoreboard() {
                             </tr>
                           </thead>
                           <tbody>
-                            {event.assignments
-                              .filter(
-                                (a) =>
-                                  a.ns === (person || event.participants[0].id) ||
-                                  a.ew === (person || event.participants[0].id),
-                              )
-                              .flatMap((a) =>
-                                a.boards.map((b) => {
+                            {playerRows.map(({ a, b, shaded }) => {
                                   const r = event.results[resultKey(a.id, b)],
                                     ns = a.ns === (person || event.participants[0].id),
                                     mp = event.projection.pairScores[resultKey(a.id, b)],
@@ -1285,7 +1353,7 @@ export default function Scoreboard() {
                                   return (
                                     <tr
                                       key={resultKey(a.id, b)}
-                                      className={a.round % 2 === 0 ? 'even-round' : undefined}
+                                      className={shaded ? 'even-round' : undefined}
                                     >
                                       <td>
                                         <button
@@ -1295,7 +1363,8 @@ export default function Scoreboard() {
                                             setTab('rounds');
                                           }}
                                         >
-                                          R{a.round}/T{a.table}
+                                          <strong className="player-round">R{a.round}</strong>
+                                          <small className="muted">/{a.table}</small>
                                         </button>
                                       </td>
                                       <td>
@@ -1306,11 +1375,15 @@ export default function Scoreboard() {
                                       <td>{ns ? 'NS' : 'EW'}</td>
                                       <td>
                                         <span className="opponent-name">
-                                          {name(ns ? a.ew : a.ns)}
+                                          {name(ns ? a.ew : a.ns)}{' '}
+                                          <small className="muted">
+                                            {(ns ? a.ew : a.ns).toUpperCase()}
+                                          </small>
                                         </span>
                                         <button
                                           className="opponent-number contract-link"
                                           popoverTarget={`${popupId}-opponent`}
+                                          onClick={(e) => positionDetail(e.currentTarget)}
                                         >
                                           {(ns ? a.ew : a.ns).toUpperCase()}
                                         </button>
@@ -1337,6 +1410,7 @@ export default function Scoreboard() {
                                         <button
                                           className="player-raw-score contract-link"
                                           popoverTarget={`${popupId}-average`}
+                                          onClick={(e) => positionDetail(e.currentTarget)}
                                         >
                                           {r && r.status !== 'cancelled'
                                             ? signed(r.nsScore * (ns ? 1 : -1))
@@ -1373,8 +1447,7 @@ export default function Scoreboard() {
                                       </td>
                                     </tr>
                                   );
-                                }),
-                              )}
+                                })}
                           </tbody>
                         </table>
                       </div>
