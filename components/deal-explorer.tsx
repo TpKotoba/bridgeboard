@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Undo2, X } from 'lucide-react';
 import type { Board, Result, Seat } from '@/lib/model';
 import { seats } from '@/lib/model';
@@ -15,12 +15,54 @@ import {
   ranks,
   strains,
   toPbn,
+  rewindToCard,
 } from '@/lib/play';
 
 const symbols: Record<string, string> = { S: '♠', H: '♥', D: '♦', C: '♣', NT: 'NT' };
 const seatNames: Record<Seat, string> = { N: '北', E: '東', S: '南', W: '西' };
 const ddStrains = ['C', 'D', 'H', 'S', 'NT'] as const;
 const ddSeats: Seat[] = ['N', 'S', 'E', 'W'];
+
+export function BoardInformation({
+  number,
+  averageScore,
+  scoreSide,
+  validResults,
+  navigation,
+}: {
+  number: number;
+  averageScore: number | null;
+  scoreSide: string;
+  validResults: number;
+  navigation?: React.ReactNode;
+}) {
+  const datumId = useId();
+  return (
+    <section className="analysis-corner board-information" aria-label="牌號與成績資訊">
+      <span className="corner-kicker">BOARD NUMBER</span>
+      {navigation ?? <strong className="board-number">{number}</strong>}
+      <button type="button" className="board-average" popoverTarget={datumId}
+        onClick={(event) => {
+          const trigger = event.currentTarget;
+          requestAnimationFrame(() => {
+            const popup = document.getElementById(datumId);
+            if (!popup?.matches(':popover-open')) return;
+            const anchor = trigger.getBoundingClientRect();
+            const box = popup.getBoundingClientRect();
+            popup.style.left = `${Math.max(8, Math.min(anchor.left + anchor.width / 2 - box.width / 2, window.innerWidth - box.width - 8))}px`;
+            popup.style.top = `${anchor.bottom + box.height + 8 <= window.innerHeight ? anchor.bottom + 6 : Math.max(8, anchor.top - box.height - 6)}px`;
+          });
+        }}>
+        <span>{scoreSide === 'NS' ? '南北' : '東西'}平均分</span>
+        <br />
+        <span className="corner-score-value">{averageScore === null ? '—' : `${averageScore >= 0 ? '+' : ''}${averageScore.toFixed(2)}`}</span>
+      </button>
+      <div id={datumId} popover="auto" className="player-detail-popover">
+        {validResults} 桌有效結果
+      </div>
+    </section>
+  );
+}
 type Future = { cards: number; suit: number[]; rank: number[]; equals: number[]; score: number[] };
 type Analysis = { tricks: number[][]; par: { score: number; contracts: string[] } };
 
@@ -31,6 +73,10 @@ export function DealExplorer({
   resultSelection = 0,
   onManualTrial,
   tableSelected = false,
+  navigation,
+  averageScore = null,
+  scoreSide = 'NS',
+  validResults = 0,
 }: {
   board: Board;
   result?: Result;
@@ -38,7 +84,12 @@ export function DealExplorer({
   resultSelection?: number;
   onManualTrial?: () => void;
   tableSelected?: boolean;
+  navigation?: React.ReactNode;
+  averageScore?: number | null;
+  scoreSide?: string;
+  validResults?: number;
 }) {
+  const scoreDetailId = useId();
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [selection, setSelection] = useState('');
   const [history, setHistory] = useState<PlayState[]>([]);
@@ -201,21 +252,26 @@ export function DealExplorer({
       ? 'Cancelled'
       : result.level === 0
         ? 'PASS'
-        : `${result.level}${symbols[result.strain]}${result.doubled === 2 ? 'X' : result.doubled === 4 ? 'XX' : ''}.${result.declarer}`;
+        : `${result.level}${symbols[result.strain]}${result.doubled === 2 ? 'x' : result.doubled === 4 ? 'xx' : ''}.${result.declarer}`;
   const contractDelta = result && result.level > 0 ? result.tricks - result.level - 6 : null;
-  const shownScore = tableSelected
+  const parParts = analysis ? highestParContract(analysis.par.contracts, board.dealer).replace(/NT/g, "N").split("/") : [];
+  const displayedContract = tableSelected ? actualContract.replace(/NT/g, "N") : parParts[0];
+  const displayedOutcome = tableSelected
+    ? (result?.status !== "cancelled" && contractDelta !== null ? (contractDelta === 0 ? "=" : contractDelta > 0 ? `+${contractDelta}` : String(contractDelta)) : "")
+    : (parParts[1] ?? "");
+  const nsScore = tableSelected
     ? result?.status === 'cancelled'
       ? undefined
       : result?.nsScore
     : analysis?.par.score;
+  const shownScore = nsScore === undefined ? undefined : nsScore * (scoreSide === "EW" ? -1 : 1);
   // Keep all four cards visible until the next trick starts, including the final trick.
   const displayedTrick = state?.trick.length ? state.trick : (state?.lastTrick ?? []);
   const rack =
     state && turn
       ? [...state.hands[turn]].sort(
           (a, b) =>
-            strains.indexOf(a[0] as (typeof strains)[number]) -
-              strains.indexOf(b[0] as (typeof strains)[number]) ||
+            'SHCD'.indexOf(a[0]) - 'SHCD'.indexOf(b[0]) ||
             ranks.indexOf(b[1]) - ranks.indexOf(a[1]),
         )
       : [];
@@ -228,45 +284,51 @@ export function DealExplorer({
         >
           <div className="par-heading">
             <span className="corner-kicker">
-              {tableSelected ? 'YOUR CONTRACT' : 'PAR CONTRACT'}
+              {tableSelected ? 'TABLE RESULT' : 'PAR CONTRACT'}
             </span>
           </div>
           {analysis || tableSelected ? (
             <>
-              <strong className={tableSelected ? 'your-contract' : undefined}>
-                {tableSelected ? actualContract : highestParContract(analysis!.par.contracts)}
-                {tableSelected && result?.status !== 'cancelled' && contractDelta !== null && (
-                  <span className="contract-outcome">
-                    {' / '}
-                    {contractDelta === 0
-                      ? '='
-                      : contractDelta > 0
-                        ? `+${contractDelta}`
-                        : contractDelta}
-                  </span>
-                )}
+              <strong className="your-contract">
+                <span>{displayedContract}</span>
+                {displayedOutcome && <span className="contract-outcome">{displayedOutcome}</span>}
               </strong>
               {shownScore !== undefined && (
-                <span>
-                  {shownScore < 0 ? 'EW' : 'NS'} +{Math.abs(shownScore)}
-                </span>
+                <button type="button" className="contract-score" popoverTarget={scoreDetailId}
+                  aria-label="查看分數、Par 與 LoTT 資訊"
+                  onClick={(event) => {
+                    const trigger = event.currentTarget;
+                    requestAnimationFrame(() => {
+                      const popup = document.getElementById(scoreDetailId);
+                      if (!popup?.matches(':popover-open')) return;
+                      const anchor = trigger.getBoundingClientRect();
+                      const box = popup.getBoundingClientRect();
+                      popup.style.left = Math.max(8, Math.min(anchor.left, window.innerWidth - box.width - 8)) + 'px';
+                      popup.style.top = (anchor.bottom + box.height + 8 <= window.innerHeight ? anchor.bottom + 6 : Math.max(8, anchor.top - box.height - 6)) + 'px';
+                    });
+                  }}>
+                  <span>{scoreSide === 'EW' ? '東西' : '南北'}原始分</span>
+                  <br />
+                  <span className="corner-score-value">{shownScore >= 0 ? '+' : ''}{shownScore}</span>
+                </button>
               )}
-              {tableSelected && analysis && (
-                <small className="par-reference">
-                  Par: {highestParContract(analysis.par.contracts)}
-                </small>
-              )}
-              {lott && !tableSelected && (
-                <small>
-                  LoTT {lott!.fit} − {lott!.tricks} = {lott!.difference}
-                </small>
-              )}
+              <div id={scoreDetailId} popover="auto" className="player-detail-popover">
+                {analysis && <div>Par: {highestParContract(analysis.par.contracts, board.dealer)}</div>}
+                {lott && <div>LoTT {lott.fit} − {lott.tricks} = {lott.difference}</div>}
+                {!analysis && <div>分析計算中…</div>}
+              </div>
             </>
           ) : (
             <span>計算中…</span>
           )}
         </section>
-        <div className="compass-spare" aria-hidden="true" />
+        <BoardInformation
+          number={board.number}
+          averageScore={averageScore}
+          scoreSide={scoreSide}
+          validResults={validResults}
+          navigation={navigation}
+        />
         {(['N', 'W', 'E', 'S'] as Seat[]).map((seat) => (
           <section
             className={`bridge-hand bridge-hand-${seat}`}
@@ -331,14 +393,21 @@ export function DealExplorer({
         ))}
         <div className="compass-center" role="group" aria-label="本墩出牌">
           {displayedTrick.map(({ seat, card }) => (
-            <span
+            <button
+              type="button"
               key={seat}
               className={`trick-card trick-card-${seat} ${card[0] === 'H' || card[0] === 'D' ? 'red-suit' : ''}`}
-              aria-label={`${seat} ${symbols[card[0]]}${card[1]}`}
+              aria-label={`退回${seatNames[seat]}家出 ${symbols[card[0]]}${card[1]} 之前`}
+              onClick={() => {
+                const earlier = rewindToCard(history, seat, card);
+                if (earlier === history) return;
+                setFuture(null);
+                setHistory(earlier);
+              }}
             >
               <span>{symbols[card[0]]}</span>
               <b>{card[1]}</b>
-            </span>
+            </button>
           ))}
         </div>
         <section className="analysis-corner hcp-corner" aria-label="發牌、身價與大牌點">

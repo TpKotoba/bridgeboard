@@ -15,6 +15,13 @@ export type PlayState = {
   ns: number;
   ew: number;
 };
+export function rewindToCard(history: PlayState[], seat: Seat, card: string) {
+  for (let i = history.length - 2; i >= 0; i--) {
+    if (history[i].hands[seat].includes(card) && !history[i + 1].hands[seat].includes(card))
+      return history.slice(0, i + 1);
+  }
+  return history;
+}
 export function initialPlay(board: Board, declarer: Seat): PlayState {
   return {
     hands: structuredClone(board.deal),

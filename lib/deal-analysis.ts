@@ -1,7 +1,7 @@
 import type { Board, Seat } from './model';
 import { strains } from './play';
 
-export function highestParContract(contracts: string[]) {
+export function highestParContract(contracts: string[], dealer?: Seat) {
   const rank = (contract: string) => {
     const match = contract.match(/^([1-7])(NT|[CDHSN])/);
     return match
@@ -12,18 +12,23 @@ export function highestParContract(contracts: string[]) {
     (best, contract) => (best === undefined || rank(contract) > rank(best) ? contract : best),
     undefined,
   );
-  return highest ? formatParContract(highest) : 'Pass out';
+  return highest ? formatParContract(highest, dealer) : 'Pass out';
 }
 
-export function formatParContract(contract: string) {
+export function formatParContract(contract: string, dealer?: Seat) {
   const match = contract.match(/^([1-7](?:NT|[CDHSN]))(\*{1,2}|X{1,2})?-([NESW]{1,2})([+-]\d+)?$/);
   if (!match) return contract;
   const [, bid, doubled = '', seat, result = ''] = match;
+  const order = 'NESW';
+  const start = dealer ? order.indexOf(dealer) : 0;
+  const declarer = dealer && ['NS', 'SN', 'EW', 'WE'].includes(seat)
+    ? Array.from({ length: 4 }, (_, i) => order[(start + i) % 4]).find((s) => seat.includes(s))!
+    : seat;
   const displayBid = bid.replace(
     /NT|[CDHSN]/,
     (suit) => ({ C: '♣', D: '♦', H: '♥', S: '♠', N: 'NT', NT: 'NT' })[suit]!,
   );
-  return `${displayBid}${doubled.replace(/\*/g, 'X')}.${seat}${result ? `/${result}` : ''}`;
+  return `${displayBid}${doubled.replace(/\*/g, 'x').toLowerCase()}.${declarer}${result ? `/${result}` : ''}`;
 }
 
 export function highCardPoints(cards: string[]) {

@@ -11,13 +11,47 @@ import {
   playFromResult,
   PlayState,
   toPbn,
+  initialPlay,
+  rewindToCard,
 } from '../lib/play';
 import { tableNames } from '../lib/table-names';
 import type { Result } from '../lib/model';
 import { parseResultsCsv, exportResultsCsv } from '../lib/imports';
-import { highCardPoints, lawOfTotalTricks } from '../lib/deal-analysis';
+import { highestParContract, highCardPoints, lawOfTotalTricks } from '../lib/deal-analysis';
 import { boardRounds } from '../lib/board-navigation';
 import { makeBoard } from '../lib/events';
+
+test('shared Par declarer follows bidding order from the dealer', () => {
+  const dealers = ['N', 'E', 'S', 'W'] as const;
+  const ns = ['N', 'S', 'S', 'N'];
+  const ew = ['E', 'E', 'W', 'W'];
+  dealers.forEach((dealer, i) => {
+    assert.equal(highestParContract(['3H*-NS-1'], dealer), `3♥x.${ns[i]}/-1`);
+    assert.equal(highestParContract(['4S-EW'], dealer), `4♠.${ew[i]}`);
+    assert.equal(highestParContract(['3NT-S+1'], dealer), '3NT.S/+1');
+  });
+});
+
+test('clicking a trick card restores its pre-play state, including a completed trick', () => {
+  const board = makeBoard(1);
+  const history = [initialPlay(board, 'N')];
+  const played: { seat: 'N' | 'E' | 'S' | 'W'; card: string }[] = [];
+  for (let i = 0; i < 4; i++) {
+    const state = history.at(-1)!;
+    const seat = nextSeat(state);
+    const card = legalCards(state)[0];
+    played.push({ seat, card });
+    history.push(playCard(state, card, 'NT'));
+  }
+  assert.equal(history.at(-1)!.lastTrick?.length, 4);
+  const restored = rewindToCard(history, played[2].seat, played[2].card);
+  assert.equal(restored.length, 3);
+  assert.equal(nextSeat(restored.at(-1)!), played[2].seat);
+  assert.ok(restored.at(-1)!.hands[played[2].seat].includes(played[2].card));
+  assert.equal(restored.at(-1)!.ns + restored.at(-1)!.ew, 0);
+  assert.equal(rewindToCard(history, played[0].seat, played[0].card).length, 1);
+  assert.equal(rewindToCard(history, 'N', 'invalid'), history);
+});
 
 test('DD best move maximizes declarer tricks for declarer side and minimizes for defenders', () => {
   assert.equal(bestDeclarerTricks([4, 4, 5], 'N', 'N'), 5);

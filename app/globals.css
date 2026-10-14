@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Source+Serif+4:wght@400;600;700&family=IBM+Plex+Mono:wght@600&display=swap');
 :root {
   --paper: #f6f5f1;
   --ink: #25332f;
@@ -552,7 +552,12 @@ main {
   padding: 18px 20px 14px;
   min-height: 111px;
 }
-.stat-detail { color: #929d8e; font-size: 11px; margin-top: 8px; font-weight: 400; }
+.stat-detail {
+  color: #929d8e;
+  font-size: 11px;
+  margin-top: 8px;
+  font-weight: 400;
+}
 .interactive-stat {
   width: 100%;
   text-align: left;
@@ -2469,6 +2474,105 @@ table th[aria-sort='descending'] > button {
 .compass-spare {
   grid-area: spare;
 }
+.board-information {
+  grid-area: spare;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  color: #34473d;
+  font-family: 'DM Sans', sans-serif;
+}
+.board-information .board-number {
+  font: 700 min(20px, 18cqw) / 1.15 'Source Serif 4', serif;
+  color: inherit;
+}
+.board-information .board-average {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: min(14px, 13cqw);
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.board-information .board-average:focus-visible {
+  outline: 2px solid #728b7b;
+  outline-offset: 3px;
+}
+@media (max-width: 899px) {
+  .analysis-corner.par-corner strong,
+  .analysis-corner.par-corner strong.your-contract,
+  .board-information .board-number {
+    font-size: min(28px, 26cqw);
+  }
+}
+.board-information > small {
+  font-size: min(12px, 11cqw);
+  color: #7b5847;
+  white-space: nowrap;
+}
+.board-information .board-nav.board-jump {
+  width: 100%;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+}
+.board-information .board-nav .board-number-picker {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.board-information .board-number-picker select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.board-information .board-number-picker:focus-within {
+  outline: 2px solid #728b7b;
+  outline-offset: 2px;
+}
+.board-information .board-nav button {
+  padding: 0;
+  width: 18px;
+  height: 23px;
+  min-height: 0;
+  color: #728b7b;
+}
+.board-information .board-nav button svg {
+  width: 14px;
+}
+.unpublished-board {
+  padding: 16px;
+}
+.unpublished-board .board-information {
+  max-width: 240px;
+  margin: 0 auto;
+  padding: 12px;
+}
+.compass-center button.trick-card {
+  color: inherit;
+  cursor: pointer;
+}
+.compass-center button.trick-card.red-suit {
+  color: #b54843;
+}
+.compass-center button.trick-card:hover {
+  border-color: #658670;
+}
 .analysis-corner.board-metadata {
   container-type: inline-size;
   display: flex;
@@ -2634,6 +2738,7 @@ table th[aria-sort='descending'] > button {
   white-space: nowrap;
 }
 .bridge-suit {
+  padding-left: 0.5em;
   display: grid;
   grid-template-columns: min(24px, 18cqw) minmax(0, 1fr);
   align-items: center;
@@ -2655,11 +2760,12 @@ table th[aria-sort='descending'] > button {
   min-width: 0;
   white-space: nowrap;
   overflow: visible;
-  font-family: 'Source Serif 4', serif;
-  font-size: min(22px, 15cqw);
-  font-weight: 700;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: min(22px, 14cqw);
+  font-weight: 600;
   letter-spacing: 0;
-  font-variant-numeric: lining-nums;
+  font-variant-numeric: lining-nums tabular-nums;
+  font-variant-ligatures: none;
 }
 .bridge-ranks span {
   display: inline;
@@ -2671,6 +2777,7 @@ table th[aria-sort='descending'] > button {
   transform-origin: left center;
 }
 .bridge-ranks .hand-card {
+  flex-shrink: 0;
   padding: 0;
   border: 0;
   background: transparent;
@@ -2739,8 +2846,37 @@ table th[aria-sort='descending'] > button {
   justify-content: center;
   font-size: min(14px, 14cqw);
 }
-.analysis-corner.par-corner {
+.analysis-corner.par-corner,
+.analysis-corner.board-information {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: min(14px, 13cqw) min(34px, 32cqw) min(40px, 38cqw);
+  align-content: center;
+  align-items: center;
+  justify-items: center;
   gap: min(12px, 8cqw);
+}
+.analysis-corner.par-corner .corner-kicker,
+.analysis-corner.board-information .corner-kicker {
+  font: 800 min(10px, 9cqw)/1.2 'DM Sans', sans-serif;
+  letter-spacing: 0.04em;
+  color: #728b7b;
+}
+.par-heading {
+  display: flex;
+  align-items: center;
+}
+.par-corner > .par-heading,
+.board-information > .corner-kicker,
+.par-corner > strong,
+.board-information > .board-nav,
+.board-information > .board-number {
+  position: relative;
+  top: 4px;
+}
+.par-corner > .par-heading,
+.board-information > .corner-kicker {
+  top: 10px;
 }
 .corner-kicker {
   color: #728b7b;
@@ -2762,8 +2898,46 @@ table th[aria-sort='descending'] > button {
   white-space: nowrap;
 }
 .your-contract .contract-outcome {
-  font-size: 0.85em;
+  font-size: 0.55em;
   font-weight: 400;
+}
+.analysis-corner.par-corner strong.your-contract {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  justify-content: center;
+  column-gap: 0.12em;
+  font-size: min(28px, 24cqw);
+  max-width: 100%;
+  padding-inline: 0.2em;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.your-contract > span {
+  white-space: nowrap;
+}
+.par-corner .contract-score {
+  margin-top: 0;
+  align-self: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.analysis-corner.par-corner .contract-score,
+.analysis-corner.board-information .board-average {
+  font-family: 'DM Sans', sans-serif;
+  font-size: min(14px, 13cqw);
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: center;
+  white-space: nowrap;
+}
+.par-corner .contract-score:focus-visible {
+  outline: 2px solid #728b7b;
+  outline-offset: 3px;
 }
 .par-corner small {
   font-size: min(12px, 11cqw);
@@ -3067,9 +3241,16 @@ table th[aria-sort='descending'] > button {
   overflow-x: auto;
   gap: 8px;
 }
-main > .page-heading { margin-bottom: 10px; }
-main > .section-collapse { padding: 4px 0; margin-bottom: 4px; }
-main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false'] { margin-bottom: 0; }
+main > .page-heading {
+  margin-bottom: 10px;
+}
+main > .section-collapse {
+  padding: 4px 0;
+  margin-bottom: 4px;
+}
+main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false'] {
+  margin-bottom: 0;
+}
 .compact-event-strip .event-option,
 .all-events-list .event-option {
   min-width: 0;
@@ -3228,4 +3409,79 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
     font-size: min(23px, 13cqw);
     grid-template: repeat(3, min(28px, 16cqw)) / repeat(3, min(30px, 17cqw));
   }
+}
+
+.board-export-actions {
+  display: flex;
+  border-top: 1px solid #e3e7df;
+}
+.board-export-actions > .button {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 6px;
+  border: 0;
+  border-radius: 0;
+  font-size: 12px;
+  text-decoration: none;
+}
+.board-export-actions > .button + .button {
+  border-left: 1px solid #e3e7df;
+}
+@media (min-width: 561px) {
+  .analysis-corner.par-corner,
+  .analysis-corner.board-information {
+    grid-template-rows: min(22px, 14cqw) min(52px, 33cqw) min(58px, 36cqw);
+    gap: min(16px, 9cqw);
+  }
+  .analysis-corner.par-corner .corner-kicker,
+  .analysis-corner.board-information .corner-kicker {
+    font-size: min(14px, 8cqw);
+  }
+  .analysis-corner.par-corner > strong,
+  .analysis-corner.par-corner strong.your-contract,
+  .analysis-corner.board-information .board-number {
+    font-size: min(40px, 24cqw);
+  }
+  .analysis-corner.par-corner .contract-score,
+  .analysis-corner.board-information .board-average {
+    font-size: min(21px, 12cqw);
+  }
+  .board-information .board-nav.board-jump {
+    grid-template-columns: 26px minmax(0, 1fr) 26px;
+  }
+  .board-information .board-nav button {
+    width: 26px;
+    height: 32px;
+  }
+  .board-information .board-nav button svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+@media (min-width: 561px) and (max-width: 899px) {
+  .analysis-corner.par-corner,
+  .analysis-corner.board-information {
+    grid-template-rows: 16px 40px 48px;
+    gap: 16px;
+  }
+  .analysis-corner.par-corner .corner-kicker,
+  .analysis-corner.board-information .corner-kicker {
+    font-size: 11px;
+  }
+  .analysis-corner.par-corner > strong,
+  .analysis-corner.par-corner strong.your-contract,
+  .analysis-corner.board-information .board-number {
+    font-size: min(32px, 22cqw);
+  }
+  .analysis-corner.par-corner .contract-score,
+  .analysis-corner.board-information .board-average {
+    font-size: 16px;
+  }
+}
+
+.analysis-corner .corner-score-value {
+  font-size: 1.2em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
 }

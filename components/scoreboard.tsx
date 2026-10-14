@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { boardGroups, boardRange } from '@/lib/board-groups';
 import { roundProgress } from '@/lib/round-progress';
+import { handviewerUrl } from '@/lib/handviewer';
 import {
   Activity,
   ArrowDownToLine,
@@ -39,7 +40,7 @@ import type {
   Seat,
 } from '@/lib/model';
 import { resultKey } from '@/lib/model';
-import { DealExplorer } from './deal-explorer';
+import { BoardInformation, DealExplorer } from './deal-explorer';
 import { tableNames } from '@/lib/table-names';
 import { boardRounds as getBoardRounds } from '@/lib/board-navigation';
 import { contractScore, imps } from '@/lib/scoring';
@@ -115,7 +116,7 @@ function signed(n: number) {
 function displayContract(r: ResultInput) {
   return r.level === 0
     ? 'PASS'
-    : `${r.level}${suitSymbols[r.strain]}${r.doubled === 2 ? 'X' : r.doubled === 4 ? 'XX' : ''}`;
+    : `${r.level}${suitSymbols[r.strain]}${r.doubled === 2 ? 'x' : r.doubled === 4 ? 'xx' : ''}`;
 }
 function resultText(r: ResultInput) {
   const delta = r.tricks - r.level - 6;
@@ -220,6 +221,16 @@ export default function Scoreboard() {
     [mode, setMode] = useState('demo');
   const [director, setDirector] = useState(false);
   const [sessionExpanded, setSessionExpanded] = useState(false);
+  const [refreshCooldown, setRefreshCooldown] = useState(false);
+  const manualRefreshUntil = useRef(0);
+  useEffect(() => {
+    if (!refreshCooldown) return;
+    const timer = setTimeout(
+      () => setRefreshCooldown(false),
+      Math.max(0, manualRefreshUntil.current - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [refreshCooldown]);
   const [showPassword, setShowPassword] = useState(false);
   const [showEvents, setShowEvents] = useState(false);
   const [eventsCollapsed, setEventsCollapsed] = useState(false);
@@ -352,6 +363,12 @@ export default function Scoreboard() {
       setRefreshing(false);
     }
   }
+  async function manualRefresh() {
+    if (refreshing || Date.now() < manualRefreshUntil.current) return;
+    manualRefreshUntil.current = Date.now() + 5000;
+    setRefreshCooldown(true);
+    await refresh();
+  }
   function toggleFollow(value: string) {
     const next = follow === value ? '' : value;
     setFollow(next);
@@ -472,6 +489,48 @@ export default function Scoreboard() {
   );
   const activeNames = event ? tableNames(event.kind, event.participants, activeAssignment) : {};
   const selectedRoundMatches = event?.projection.matches.filter((m) => m.round === round) ?? [];
+  function browseBoard(number: number) {
+    setSelectedResult('');
+    setBoard(number);
+  }
+  const boardNavigation =
+    event && selectedBoard ? (
+      <div className={`board-nav board-jump ${event.kind === 'pairs' ? 'pairs-board-jump' : ''}`}>
+        <button
+          className="icon-button"
+          aria-label="上一副"
+          disabled={selectedBoard.number <= 1}
+          onClick={() => browseBoard(selectedBoard.number - 1)}
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <label className="board-number-picker">
+          <strong className="board-number" aria-hidden="true">{selectedBoard.number}</strong>
+          <select aria-label="選擇牌號" value={selectedBoard.number}
+            onChange={(e) => browseBoard(Number(e.target.value))}>
+            {event.kind === 'teams'
+              ? boardRounds.map((round) => (
+                  <optgroup key={round.round} label={'第 ' + round.round + ' 圈'}>
+                    {round.boards.map((number, index) => (
+                      <option key={index} value={number}>牌號 {number}（圈內第 {index + 1} 牌）</option>
+                    ))}
+                  </optgroup>
+                ))
+              : event.boards.map((board) => (
+                  <option key={board.number} value={board.number}>牌號 {board.number}</option>
+                ))}
+          </select>
+        </label>
+        <button
+          className="icon-button"
+          aria-label="下一副"
+          disabled={selectedBoard.number >= event.boards.length}
+          onClick={() => browseBoard(selectedBoard.number + 1)}
+        >
+          <ArrowRight size={18} />
+        </button>
+      </div>
+    ) : null;
   const navItems: [Tab, string, typeof Trophy][] = [
     ['standings', '總排名', Trophy],
     ['rounds', '輪次與對戰', ClipboardList],
@@ -508,6 +567,11 @@ export default function Scoreboard() {
           ))}
         </nav>
         <div className="sidebar-bottom">
+          <button className={`nav-item ${tab === 'admin' ? 'active' : ''}`} onClick={openAdmin}>
+            <Settings2 size={19} />
+            {admin && !director ? '賽務功能表' : '裁判功能表'}
+            <ChevronRight size={15} />
+          </button>
           <div className="sidebar-note">
             <span className="tiny-suits">
               ♠ <b>♥ ♦</b> ♣
@@ -709,8 +773,8 @@ export default function Scoreboard() {
                     </div>
                     <button
                       className={`button subtle ${refreshing ? 'refreshing' : ''}`}
-                      disabled={refreshing}
-                      onClick={refresh}
+                      disabled={refreshing || refreshCooldown}
+                      onClick={manualRefresh}
                     >
                       <Activity size={16} />
                       {refreshing ? '更新中' : '更新成績'}
@@ -752,7 +816,15 @@ export default function Scoreboard() {
                       label="目前圈數"
                       value={event.currentRound ?? 0}
                       suffix={`/ ${event.rounds} 圈`}
-                      detail={event.status === 'finished' ? '賽事已結束' : !event.currentRound ? '尚未開始' : event.roundPhase === 'break' ? '圈間休息' : undefined}
+                      detail={
+                        event.status === 'finished'
+                          ? '賽事已結束'
+                          : !event.currentRound
+                            ? '尚未開始'
+                            : event.roundPhase === 'break'
+                              ? '圈間休息'
+                              : undefined
+                      }
                       icon={<Flag />}
                       popoverTarget="current-round-information"
                       onClick={(e) => positionDetail(e.currentTarget)}
@@ -1163,87 +1235,8 @@ export default function Scoreboard() {
                   )}
                   {tab === 'boards' && selectedBoard && (
                     <>
-                      <div
-                        className={`board-nav board-jump ${event.kind === 'pairs' ? 'pairs-board-jump' : ''}`}
-                      >
-                        <button
-                          className="icon-button"
-                          aria-label="上一副"
-                          disabled={selectedBoard.number <= 1}
-                          onClick={() => setBoard(selectedBoard.number - 1)}
-                        >
-                          <ArrowLeft size={18} />
-                        </button>
-                        {event.kind === 'teams' && (
-                          <label>
-                            <select
-                              aria-label="選擇圈數"
-                              value={boardRound?.round ?? 1}
-                              onChange={(e) =>
-                                setBoard(
-                                  boardRounds.find((r) => r.round === Number(e.target.value))
-                                    ?.boards[0] ?? 1,
-                                )
-                              }
-                            >
-                              {boardRounds.map((r) => (
-                                <option key={r.round} value={r.round}>
-                                  第 {r.round} 圈
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        )}
-                        <label>
-                          <select
-                            aria-label={event.kind === 'teams' ? '選擇圈內第幾牌' : '選擇牌號'}
-                            value={
-                              event.kind === 'teams' ? boardNumberInRound : selectedBoard.number
-                            }
-                            onChange={(e) =>
-                              setBoard(
-                                event.kind === 'teams'
-                                  ? (boardRound?.boards[Number(e.target.value)] ?? 1)
-                                  : Number(e.target.value),
-                              )
-                            }
-                          >
-                            {event.kind === 'teams'
-                              ? boardRound?.boards.map((number, index) => (
-                                  <option key={`${number}-${index}`} value={index}>
-                                    第 {index + 1} 牌
-                                  </option>
-                                ))
-                              : event.boards.map((board) => (
-                                  <option key={board.number} value={board.number}>
-                                    牌號 {board.number}
-                                  </option>
-                                ))}
-                          </select>
-                        </label>
-                        <button
-                          className="icon-button"
-                          aria-label="下一副"
-                          disabled={selectedBoard.number >= event.boards.length}
-                          onClick={() => setBoard(selectedBoard.number + 1)}
-                        >
-                          <ArrowRight size={18} />
-                        </button>
-                      </div>
                       <div className="board-layout">
                         <section className="panel deal-panel">
-                          <div className="panel-heading">
-                            <h3 className="board-summary">
-                              牌號 {selectedBoard.number}
-                              <span>
-                                （{sideLabel} 平均分{' '}
-                                {averageBoardScore === null
-                                  ? '—'
-                                  : `${averageBoardScore * sideSign >= 0 ? '+' : ''}${number(averageBoardScore * sideSign)}`}
-                                ，{completedBoardScores.length} 桌有效結果）
-                              </span>
-                            </h3>
-                          </div>
                           {hasDeal(selectedBoard) && selectedBoard.deal.N.length === 13 ? (
                             <DealExplorer
                               key={`${event.id}:${selectedBoard.number}`}
@@ -1253,13 +1246,31 @@ export default function Scoreboard() {
                               resultSelection={resultSelection}
                               tableSelected={!!activeAssignment}
                               onManualTrial={() => setSelectedResult('')}
+                              navigation={boardNavigation}
+                              averageScore={
+                                averageBoardScore === null ? null : averageBoardScore * sideSign
+                              }
+                              scoreSide={sideLabel}
+                              validResults={completedBoardScores.length}
                             />
                           ) : (
-                            <DealDiagram board={selectedBoard} />
+                            <div className="unpublished-board">
+                              <BoardInformation
+                                number={selectedBoard.number}
+                                averageScore={
+                                  averageBoardScore === null ? null : averageBoardScore * sideSign
+                                }
+                                scoreSide={sideLabel}
+                                validResults={completedBoardScores.length}
+                                navigation={boardNavigation}
+                              />
+                              <DealDiagram board={selectedBoard} />
+                            </div>
                           )}
                           {hasDeal(selectedBoard) && selectedBoard.deal.N.length > 0 && (
+                            <div className="board-export-actions">
                             <button
-                              className="button subtle full"
+                              className="button subtle"
                               onClick={() =>
                                 download(
                                   `board-${selectedBoard.number}.pbn`,
@@ -1270,6 +1281,11 @@ export default function Scoreboard() {
                               <ArrowDownToLine size={15} />
                               下載此副 PBN
                             </button>
+                            <a className="button subtle" href={handviewerUrl(selectedBoard)} target="_blank" rel="noopener noreferrer">
+                              <ArrowRight size={15} />
+                              輸出至 Handviewer
+                            </a>
+                            </div>
                           )}
                         </section>
                         <section className="panel board-results">
@@ -1849,7 +1865,9 @@ function Stat({
         {value}
         <small>{suffix}</small>
       </div>
-      {detail ? <div className="stat-detail">{detail}</div> : progress !== undefined ? (
+      {detail ? (
+        <div className="stat-detail">{detail}</div>
+      ) : progress !== undefined ? (
         <div className="progress-track">
           <span style={{ width: `${progress * 100}%` }} />
         </div>
