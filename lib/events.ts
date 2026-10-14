@@ -200,7 +200,12 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     }
     club.finalized.push(command.round);
     e.roundPhase = 'break';
+    if (command.force && command.round < e.rounds) {
+      e.currentRound = command.round + 1;
+      e.roundPhase = 'playing';
+    }
     detail = '第 ' + command.round + ' 圈結算並發布' + (command.force ? '（強制確認並取消未收牌）' : '');
+    if (e.currentRound !== command.round) detail += `；第 ${e.currentRound} 圈開始進行`;
   } else if (command.action === 'results') {
     if (e.status === 'finished') throw new DomainError('請先重新開放賽事，再更正成績。');
     const seen = new Set<string>();

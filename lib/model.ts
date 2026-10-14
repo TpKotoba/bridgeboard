@@ -261,6 +261,7 @@ export type Projection = {
   expected: number;
 };
 export type PublicEvent = Omit<BridgeEvent, 'audit' | 'boards'> & {
+  collectionProgress?: ReturnType<typeof import('./round-progress').roundProgress>;
   boards: Omit<Board, 'deal'>[] | Board[];
   projection: Projection;
 };

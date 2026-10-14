@@ -2,6 +2,7 @@ import type { BridgeEvent } from './model';
 import { resultKey } from './model';
 import { project } from './scoring';
 import { publicBoards } from './public-event';
+import { roundProgress } from './round-progress';
 
 export function audienceEvent(event: BridgeEvent) {
   const { audit, club, ...data } = event;
@@ -16,7 +17,7 @@ export function audienceEvent(event: BridgeEvent) {
     }
     return b;
   });
-  return { ...safe, boards, projection: project({ ...event, results }) };
+  return { ...safe, boards, collectionProgress: roundProgress(event), projection: project({ ...event, results }) };
 }
 
 export function clubView(event: BridgeEvent, pair: string) {

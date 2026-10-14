@@ -46,6 +46,8 @@ test('club finalization is atomic; forced finalization audits cancellations and 
   s.apply({ action: 'club-play', round: 1, confirm: false, tokenHash: s.hash(a.ns), result: s.result(a.id, a.boards[0]) });
   const hidden = audienceEvent(s.state.event);
   assert.equal(Object.keys(hidden.results).length, 0);
+  assert.equal(hidden.collectionProgress.received, 1);
+  assert.equal(hidden.collectionProgress.expected, 4);
   assert.equal('club' in hidden, false);
   assert.equal('audit' in hidden, false);
   assert.equal('deal' in JSON.parse(JSON.stringify(hidden.boards[0])), false);
@@ -55,9 +57,13 @@ test('club finalization is atomic; forced finalization audits cancellations and 
   assert.ok(s.state.event.audit.at(-1)!.changes!.every(c => c.after?.status === 'cancelled'));
   assert.ok(Object.keys(audienceEvent(s.state.event).results).length > 0);
   assert.throws(() => s.apply({ action: 'club-play', round: 1, confirm: false, tokenHash: s.hash(a.ns), result: s.result(a.id, a.boards[0]) }), /不開放/);
-  s.apply({ action: 'round-control', round: 2, phase: 'playing' });
+  assert.equal(s.state.event.currentRound, 2);
+  assert.equal(s.state.event.roundPhase, 'playing');
+  assert.equal(audienceEvent(s.state.event).collectionProgress.received, 0);
   assert.equal(clubView(s.state.event, a.ns).locked, false);
   s.apply({ action: 'club-finalize', round: 2, force: true });
+  assert.equal(s.state.event.currentRound, 2);
+  assert.equal(s.state.event.roundPhase, 'break');
   s.apply({ action: 'settings', status: 'finished' });
   assert.equal(s.state.event.status, 'finished');
 });
@@ -68,6 +74,8 @@ test('club ordinary finalization requires both pairs and retries do not duplicat
     for (const pair of [a.ns, a.ew]) s.apply({ action: 'club-play', round: 1, confirm: true, tokenHash: s.hash(pair) });
   }
   s.apply({ action: 'club-finalize', round: 1, force: false, requestId: 'finalize-once' });
+  assert.equal(s.state.event.currentRound, 1);
+  assert.equal(s.state.event.roundPhase, 'break');
   const state = s.state;
   s.apply({ action: 'club-finalize', round: 1, force: false, requestId: 'finalize-once' });
   assert.equal(s.state, state);

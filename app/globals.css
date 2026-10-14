@@ -181,6 +181,7 @@ small {
   padding-top: 40px;
 }
 .sidebar-bottom > .nav-item {
+  margin-bottom: 32px;
   border-top: 1px solid #446050;
   border-radius: 0;
   padding-top: 23px;
@@ -546,6 +547,9 @@ main {
   margin-bottom: 25px;
 }
 .stat-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -608,7 +612,9 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  min-height: 20px;
+  line-height: 20px;
+  font-size: 14px;
   color: #7d877c;
 }
 .stat-top svg {
@@ -1825,9 +1831,9 @@ select {
 }
 .participant-picker-trigger {
   display: grid;
-  grid-template-columns: 3em minmax(0, 1fr) 16px;
-  align-items: center;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  align-items: baseline;
+  gap: 6px;
   width: 260px;
   max-width: 100%;
   min-height: 42px;
@@ -1840,6 +1846,22 @@ select {
   font: inherit;
   font-size: 14px;
 }
+.participant-picker-trigger > span,
+.participant-options button > span {
+  font-size: inherit;
+  line-height: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.participant-picker-trigger > svg {
+  align-self: center;
+}
+.participant-picker-number {
+  display: inline-block;
+  width: 3ch;
+  margin-right: 3px;
+}
 .participant-options {
   width: 280px;
   max-height: min(360px, 65vh);
@@ -1847,8 +1869,9 @@ select {
 }
 .participant-options button {
   display: grid;
-  grid-template-columns: 3em minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: baseline;
+  gap: 6px;
   width: 100%;
   border: 0;
   background: transparent;
@@ -2166,6 +2189,9 @@ table a:focus-visible {
 .player-results .opponent-number {
   display: none;
 }
+.player-results .opponent-name small {
+  font-size: 0.75em;
+}
 @media (max-width: 560px) {
   .player-results table tr > :nth-child(n) {
     padding: 12px 3px;
@@ -2173,6 +2199,9 @@ table a:focus-visible {
   .player-results table tr > :nth-child(4) {
     display: table-cell;
     white-space: nowrap;
+  }
+  .player-results table tr > :nth-child(7) {
+    padding-right: 15px;
   }
   .player-results .opponent-name {
     display: none;
@@ -3605,11 +3634,28 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
 .club-page .field select, .club-page .field input { min-height: 48px; font-size: 16px; }
 .club-admin h4 { margin: 24px 0 12px; }
 .club-admin p { line-height: 1.6; }
-.club-pair-links { display: grid; gap: 8px; margin: 16px 0; }
-.club-pair-links > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.club-pair-links > div > span { min-width: 0; }
-.club-pair-links button { flex-shrink: 0; }
+.club-pair-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.club-pair-links button { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .club-link-card { display: flex; flex-direction: column; align-items: center; gap: 12px; border: 1px solid var(--line); padding: 16px; border-radius: 8px; }
 .club-link-card img { max-width: 100%; height: auto; }
 .club-link-card input { width: 100%; min-width: 0; }
 .club-progress-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+
+.score-actions .button { font-size: 14px; min-height: 44px; padding: 10px 12px; }
+
+.panel-heading.admin-panel-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 8px; }
+.admin-panel-heading > h3 { margin: 0; white-space: nowrap; }
+.admin-panel-heading > .button-row { flex-wrap: nowrap; }
+.admin-panel-heading .button { white-space: nowrap; }
+.admin-panel-heading > .admin-panel-description { grid-column: 1 / -1; margin: 0; }
+
+/* Keep result rows at one readable size; contract annotations stay smaller. */
+.player-results tbody tr > td:nth-child(n),
+.player-results tbody .text-button,
+.player-results tbody .contract-link,
+.player-results tbody .player-round,
+.player-results tbody .player-points-value,
+.player-results tbody .contract,
+.player-results tbody .cancelled-contract {
+  font-size: 13px;
+}

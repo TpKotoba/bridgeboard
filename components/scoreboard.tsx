@@ -237,6 +237,15 @@ export default function Scoreboard() {
   const [eventsCollapsed, setEventsCollapsed] = useState(false);
   const [dashboardCollapsed, setDashboardCollapsed] = useState(false);
   useEffect(() => {
+    if (tab !== 'admin') return;
+    setEventsCollapsed(true);
+    setDashboardCollapsed(true);
+    try {
+      localStorage.setItem('bridge-events-collapsed', 'true');
+      localStorage.setItem('bridge-dashboard-collapsed', 'true');
+    } catch {}
+  }, [tab]);
+  useEffect(() => {
     try {
       setEventsCollapsed(localStorage.getItem('bridge-events-collapsed') === 'true');
       setDashboardCollapsed(localStorage.getItem('bridge-dashboard-collapsed') === 'true');
@@ -406,7 +415,7 @@ export default function Scoreboard() {
     }
   }
   const name = (pid: string) => event?.participants.find((p) => p.id === pid)?.name ?? pid;
-  const currentProgress = event ? roundProgress(event) : null;
+  const currentProgress = event ? (event.collectionProgress ?? roundProgress(event)) : null;
   const currentTiming = event?.roundTimes?.[event.currentRound ?? 0];
   const playerId = person || event?.participants[0]?.id;
   let playerBand = 0;
@@ -860,7 +869,7 @@ export default function Scoreboard() {
                     <div className="description-text">{event.awardDescription || '尚未公布給獎內容'}</div>
                   </div>
                   <div id="movement-information" popover="auto" className="player-detail-popover">
-                    <strong>Movement 說明</strong>
+                    <strong>賽程編排說明</strong>
                     <div className="description-text">{event.movementDescription || '尚未提供詳細說明'}</div>
                     <div>{event.rounds} 圈，每圈 {event.boardsPerRound} 牌；共 {event.boards.length} 副牌。</div>
                     <div>實際對戰、牌組與輪空請見「輪次與對戰」。</div>
@@ -1537,8 +1546,7 @@ export default function Scoreboard() {
                             popoverTarget="participant-options"
                             onClick={(e) => positionDetail(e.currentTarget)}
                           >
-                            <span>{(person || event.participants[0].id).toUpperCase()}</span>
-                            <span>{name(person || event.participants[0].id)}</span>
+                            <span><span className="participant-picker-number">{(person || event.participants[0].id).toUpperCase()}</span>{event.kind === 'pairs' ? name(person || event.participants[0].id).trim().replace(/\s+/g, ' ') : name(person || event.participants[0].id)}</span>
                             <ChevronDown size={16} />
                           </button>
                           <div
@@ -1558,8 +1566,7 @@ export default function Scoreboard() {
                                   )?.hidePopover();
                                 }}
                               >
-                                <span>{p.id.toUpperCase()}</span>
-                                <span>{p.name}</span>
+                                <span><span className="participant-picker-number">{p.id.toUpperCase()}</span>{event.kind === 'pairs' ? p.name.trim().replace(/\s+/g, ' ') : p.name}</span>
                               </button>
                             ))}
                           </div>
@@ -1574,7 +1581,7 @@ export default function Scoreboard() {
                                   className="contract-link"
                                   onClick={() => setPlayerSort('round')}
                                 >
-                                  輪次／桌
+                                  桌次
                                 </button>
                               </th>
                               <th aria-sort={playerSort === 'board' ? 'ascending' : 'none'}>
@@ -1746,12 +1753,6 @@ export default function Scoreboard() {
                         setId(list[0]?.id ?? '');
                         setTab('standings');
                         setNotice('賽事已刪除。');
-                      }}
-                      onLogout={async () => {
-                        await api('/api/session', { method: 'DELETE' });
-                        setAdmin(false);
-                        setDirector(false);
-                        setTab('standings');
                       }}
                     />
                   )}
@@ -2148,7 +2149,7 @@ function CreateDialog({
         </label>
         <p className="footnote">
           預設建立固定循環對戰，各桌每輪打相同牌組。雙人賽需備妥重複牌組，或在收分前匯入自己的
-          movement。排名同分並列。
+          賽程編排。排名同分並列。
         </p>
         {error && (
           <p className="error-text" role="alert">
@@ -2167,13 +2168,11 @@ function AdminPanel({
   onSaved,
   onCreate,
   onDeleted,
-  onLogout,
 }: {
   eventId: string;
   onSaved: (s: string) => Promise<void>;
   onCreate: () => void;
   onDeleted: () => Promise<void>;
-  onLogout: () => Promise<void>;
 }) {
   const [event, setEvent] = useState<AdminEvent | null>(null),
     [error, setError] = useState(''),
@@ -2319,14 +2318,10 @@ function AdminPanel({
   const name = (id: string) => event.participants.find((p) => p.id === id)?.name ?? id;
   return (
     <section className="panel admin-panel">
-      <div className="panel-heading">
-        <div>
+      <div className="panel-heading admin-panel-heading">
           <h3>
-            {event.canDirect ? '裁判後台' : '賽務後台'}{' '}
-            <span className="badge">版本 {event.revision}</span>
+            {event.canDirect ? '裁判後台' : '賽務後台'}
           </h3>
-          <p>原始結果、排名與更正紀錄一併儲存。</p>
-        </div>
         <div className="button-row">
           {event.canDirect && (
             <button className="button subtle" onClick={onCreate}>
@@ -2334,18 +2329,18 @@ function AdminPanel({
               新賽事
             </button>
           )}
-          <button className="button subtle" onClick={onLogout}>
-            登出
-          </button>
         </div>
+        <p className="admin-panel-description">
+          <span className="badge">版本 {event.revision}</span>{' '}
+          原始結果、排名與更正紀錄一併儲存。
+        </p>
       </div>
       <div className="admin-tabs">
         {[
           ['score', '收分／更正'],
           ...(event.canDirect && event.kind === 'pairs' ? [['club', '俱樂部收分']] : []),
-          ...(event.canDirect ? [['round-progress', '圈次進度']] : []),
           ...(event.canDirect ? [['import', '匯入／匯出']] : []),
-          ['publish', event.canDirect ? '發布設定' : '賽事設定'],
+          ['publish', event.canDirect ? '圈次與發布設定' : '賽事設定'],
           ['penalty', '判罰調整'],
           ...(event.canDirect ? [['audit', '操作紀錄']] : []),
         ].map(([k, v]) => (
@@ -2363,7 +2358,7 @@ function AdminPanel({
       </div>
       <div className="admin-content">
         {section === 'club' && event.canDirect && event.kind === 'pairs' && <ClubAdmin event={event} reload={load} />}
-        {section === 'round-progress' && event.canDirect && (
+        {section === 'publish' && event.canDirect && (
           <>
             <form
               className="round-settings-form"
@@ -2671,6 +2666,7 @@ function AdminPanel({
                 {signed(existing.nsScore)}。提交後會保留前後差異。
               </p>
             )}
+            <div className="button-row score-actions">
             <button
               className="button primary"
               disabled={busy || event.status === 'finished' || existing?.status === 'cancelled'}
@@ -2678,12 +2674,6 @@ function AdminPanel({
               <Check size={16} />
               {busy ? '儲存中…' : existing ? '儲存更正並重算' : '提交成績'}
             </button>
-            <div className="director-controls">
-              <strong>結果裁定</strong>
-              <p>
-                Cancelled 排除此桌此副的比較並視為已處理，不等於 Pass
-                out。請先在上方填寫裁定原因；恢復時採用上方合約。
-              </p>
               <button
                 type="button"
                 className="button subtle"
@@ -2701,7 +2691,7 @@ function AdminPanel({
                   })
                 }
               >
-                {existing?.status === 'cancelled' ? '恢復為上方合約' : '設為 Cancelled'}
+                {existing?.status === 'cancelled' ? '恢復合約' : '取消此副'}
               </button>
             </div>
             {event.status === 'finished' && (
@@ -2740,7 +2730,7 @@ function AdminPanel({
                     }
                   >
                     <ArrowDownToLine size={16} />
-                    Movement CSV
+                    賽程編排 CSV
                   </button>
                 )}
                 <button
@@ -2767,10 +2757,6 @@ function AdminPanel({
             </section>
             <section className="import-export-section">
               <h4>匯入資料</h4>
-              <a className="button subtle" href="/docs/import-formats.md" download>
-                <ArrowDownToLine size={16} />
-                下載匯入格式文件
-              </a>
               <label className="field">
                 匯入類型
                 <select
@@ -2783,7 +2769,7 @@ function AdminPanel({
                 >
                   <option value="results">成績 CSV</option>
                   <option value="pbn">完整牌型 PBN</option>
-                  {event.kind === 'pairs' && <option value="movement">Movement CSV</option>}
+                  {event.kind === 'pairs' && <option value="movement">賽程編排 CSV</option>}
                 </select>
               </label>
               <label className="field">
@@ -2860,8 +2846,8 @@ function AdminPanel({
               </div>
               {preview && <pre className="import-preview">{preview}</pre>}
               <p className="footnote">
-                先匯出範例了解欄位。搭檔 ID 可從 movement 查閱；成績使用 assignmentId 與 board
-                定位。牌型僅能在尚未收分時替換；movement
+                先匯出範例了解欄位。搭檔 ID 可從賽程編排查閱；成績使用 assignmentId 與 board
+                定位。牌型僅能在尚未收分時替換；賽程編排
                 可逐圈補入，每圈必須完整，已收分輪次不可改動。
               </p>
             </section>
@@ -2969,7 +2955,7 @@ function AdminPanel({
               <label className="field">給獎內容
                 <textarea name="awardDescription" maxLength={2000} defaultValue={event.awardDescription ?? ''} />
               </label>
-              <label className="field">Movement 說明
+              <label className="field">賽程編排說明
                 <textarea name="movementDescription" maxLength={4000} defaultValue={event.movementDescription ?? ''} />
               </label>
               <button className="button subtle" disabled={busy}>
