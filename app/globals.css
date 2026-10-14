@@ -3485,3 +3485,17 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
+
+.your-contract .contract-bid.red-suit {
+  color: #bd4944;
+}
+.your-contract .contract-seat,
+.your-contract .contract-outcome {
+  color: #8c948b;
+  font-family: 'DM Sans', 'Noto Sans TC', sans-serif;
+  font-size: 0.55em;
+  font-weight: 400;
+}
+.your-contract .contract-seat {
+  margin-left: 0.2em;
+}

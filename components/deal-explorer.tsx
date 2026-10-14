@@ -53,7 +53,7 @@ export function BoardInformation({
             popup.style.top = `${anchor.bottom + box.height + 8 <= window.innerHeight ? anchor.bottom + 6 : Math.max(8, anchor.top - box.height - 6)}px`;
           });
         }}>
-        <span>{scoreSide === 'NS' ? '南北' : '東西'}平均分</span>
+        <span>Datum {scoreSide}</span>
         <br />
         <span className="corner-score-value">{averageScore === null ? '—' : `${averageScore >= 0 ? '+' : ''}${averageScore.toFixed(2)}`}</span>
       </button>
@@ -256,6 +256,7 @@ export function DealExplorer({
   const contractDelta = result && result.level > 0 ? result.tricks - result.level - 6 : null;
   const parParts = analysis ? highestParContract(analysis.par.contracts, board.dealer).replace(/NT/g, "N").split("/") : [];
   const displayedContract = tableSelected ? actualContract.replace(/NT/g, "N") : parParts[0];
+  const contractParts = displayedContract?.match(/^([1-7])([♣♦♥♠N])(x{0,2})\.([NESW])$/);
   const displayedOutcome = tableSelected
     ? (result?.status !== "cancelled" && contractDelta !== null ? (contractDelta === 0 ? "=" : contractDelta > 0 ? `+${contractDelta}` : String(contractDelta)) : "")
     : (parParts[1] ?? "");
@@ -290,7 +291,12 @@ export function DealExplorer({
           {analysis || tableSelected ? (
             <>
               <strong className="your-contract">
-                <span>{displayedContract}</span>
+                {contractParts ? <>
+                  <span className={['♦', '♥'].includes(contractParts[2]) ? 'contract-bid red-suit' : 'contract-bid'}>
+                    {contractParts[1]}{contractParts[2]}{contractParts[3]}
+                  </span>
+                  <span className="contract-seat">{seatNames[contractParts[4] as Seat]}</span>
+                </> : <span>{displayedContract}</span>}
                 {displayedOutcome && <span className="contract-outcome">{displayedOutcome}</span>}
               </strong>
               {shownScore !== undefined && (
@@ -307,7 +313,7 @@ export function DealExplorer({
                       popup.style.top = (anchor.bottom + box.height + 8 <= window.innerHeight ? anchor.bottom + 6 : Math.max(8, anchor.top - box.height - 6)) + 'px';
                     });
                   }}>
-                  <span>{scoreSide === 'EW' ? '東西' : '南北'}原始分</span>
+                  <span>{scoreSide} Score</span>
                   <br />
                   <span className="corner-score-value">{shownScore >= 0 ? '+' : ''}{shownScore}</span>
                 </button>
