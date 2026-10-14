@@ -31,6 +31,12 @@ export function formatParContract(contract: string, dealer?: Seat) {
   return `${displayBid}${doubled.replace(/\*/g, 'x').toLowerCase()}.${declarer}${result ? `/${result}` : ''}`;
 }
 
+export function fullParContracts(contracts: string[]): string[] {
+  return contracts.length
+    ? contracts.map((contract) => formatParContract(contract).replace('.', ' ').replace('/', ' '))
+    : ['Pass out'];
+}
+
 export function highCardPoints(cards: string[]) {
   return cards.reduce((sum, card) => sum + ({ A: 4, K: 3, Q: 2, J: 1 }[card[1]] ?? 0), 0);
 }

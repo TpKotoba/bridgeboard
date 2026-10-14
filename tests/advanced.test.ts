@@ -17,9 +17,16 @@ import {
 import { tableNames } from '../lib/table-names';
 import type { Result } from '../lib/model';
 import { parseResultsCsv, exportResultsCsv } from '../lib/imports';
-import { highestParContract, highCardPoints, lawOfTotalTricks } from '../lib/deal-analysis';
+import { fullParContracts, highestParContract, highCardPoints, lawOfTotalTricks } from '../lib/deal-analysis';
 import { boardRounds } from '../lib/board-navigation';
 import { makeBoard } from '../lib/events';
+
+test('Par details retain all contracts and shared declarers without punctuation separators', () => {
+  assert.deepEqual(fullParContracts(['3H*-NS-1', '4S-EW', '3NT-S+1']), [
+    '3♥x NS -1', '4♠ EW', '3NT S +1',
+  ]);
+  assert.deepEqual(fullParContracts([]), ['Pass out']);
+});
 
 test('shared Par declarer follows bidding order from the dealer', () => {
   const dealers = ['N', 'E', 'S', 'W'] as const;

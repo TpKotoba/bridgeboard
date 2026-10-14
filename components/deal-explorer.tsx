@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Undo2, X } from 'lucide-react';
 import type { Board, Result, Seat } from '@/lib/model';
 import { seats } from '@/lib/model';
-import { highestParContract, highCardPoints, lawOfTotalTricks } from '@/lib/deal-analysis';
+import { fullParContracts, highestParContract, highCardPoints, lawOfTotalTricks } from '@/lib/deal-analysis';
 import {
   initialPlay,
   bestDeclarerTricks,
@@ -319,7 +319,11 @@ export function DealExplorer({
                 </button>
               )}
               <div id={scoreDetailId} popover="auto" className="player-detail-popover">
-                {analysis && <div>Par: {highestParContract(analysis.par.contracts, board.dealer)}</div>}
+                {analysis && <div>Par:
+                  {fullParContracts(analysis.par.contracts).map((contract, index) => (
+                    <div key={index}>{contract}</div>
+                  ))}
+                </div>}
                 {lott && <div>LoTT {lott.fit} − {lott.tricks} = {lott.difference}</div>}
                 {!analysis && <div>分析計算中…</div>}
               </div>
