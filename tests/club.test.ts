@@ -1,0 +1,86 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createEvent, applyMutation, makeBoard } from '../lib/events';
+import { project } from '../lib/scoring';
+import { audienceEvent, clubView } from '../lib/club-view';
+import type { Mutation, StoredEvent } from '../lib/model';
+function setup(count = 4) {
+  const event = createEvent({ name: 'Club QA', kind: 'pairs', pairMethod: 'crossimp', trim: 'none', date: '2026-10-14', venue: '', names: Array.from({ length: count }, (_, i) => `Pair ${i}`), rounds: 2, boardsPerRound: 2 });
+  event.boards = event.boards.map(b => ({ ...makeBoard(b.number), published: true }));
+  let state: StoredEvent = { event, projection: project(event), requests: [] };
+  const apply = (command: object) => { state = applyMutation(state, { revision: state.event.revision, requestId: `test-${state.event.revision}`, reason: '測試操作', ...command } as Mutation); return state; };
+  apply({ action: 'club-config', enabled: true });
+  event.participants.forEach((p, i) => apply({ action: 'club-config', enabled: true, participantId: p.id, tokenHash: String(i + 1).repeat(64) }));
+  apply({ action: 'round-control', round: 1, phase: 'playing' });
+  const hash = (pair: string) => state.event.club!.tokens[pair];
+  const result = (assignmentId: string, board: number, tricks = 9) => ({ assignmentId, board, level: 3, strain: 'NT', declarer: 'N', doubled: 1, tricks, lead: '' });
+  return { get state() { return state; }, apply, hash, result };
+}
+test('club confines tokens to own current table, shares latest result and locks only confirming pair', () => {
+  const s = setup(), a = s.state.event.assignments[0];
+  const play = (pair: string, board: number, tricks = 9) => s.apply({ action: 'club-play', round: 1, confirm: false, tokenHash: s.hash(pair), result: s.result(a.id, board, tricks) });
+  assert.throws(() => s.apply({ action: 'club-play', round: 1, confirm: false, tokenHash: 'bad', result: s.result(a.id, 1) }), /無效/);
+  const other = s.state.event.assignments.find(b => b.round === 1 && b.id !== a.id)!;
+  assert.throws(() => s.apply({ action: 'club-play', round: 1, confirm: false, tokenHash: s.hash(other.ns), result: s.result(a.id, a.boards[0]) }), /只能/);
+  assert.throws(() => s.apply({ action: 'club-play', round: 2, confirm: false, tokenHash: s.hash(a.ns), result: s.result(a.id, a.boards[0]) }), /不開放/);
+  assert.throws(() => s.apply({ action: 'club-play', round: 1, confirm: true, tokenHash: s.hash(a.ns) }), /未輸入/);
+  a.boards.forEach(b => play(a.ns, b));
+  s.apply({ action: 'club-play', round: 1, confirm: true, tokenHash: s.hash(a.ns) });
+  assert.throws(() => play(a.ns, a.boards[0]), /鎖定/);
+  play(a.ew, a.boards[0], 10);
+  const view = clubView(s.state.event, a.ns);
+  assert.equal(view.locked, true);
+  assert.equal(view.boards[0].result?.tricks, 10);
+  assert.equal('deal' in view.boards[0], false);
+  assert.equal(view.boards.length, a.boards.length);
+  const old = s.hash(a.ew);
+  s.apply({ action: 'club-config', enabled: true, participantId: a.ew, tokenHash: 'f'.repeat(64) });
+  assert.throws(() => s.apply({ action: 'club-play', round: 1, confirm: true, tokenHash: old }), /無效/);
+});
+test('club finalization is atomic; forced finalization audits cancellations and releases only settled results', () => {
+  const s = setup();
+  const before = s.state;
+  assert.throws(() => s.apply({ action: 'club-finalize', round: 1, force: false }), /未確認/);
+  assert.equal(s.state, before);
+  const a = s.state.event.assignments[0];
+  s.apply({ action: 'club-play', round: 1, confirm: false, tokenHash: s.hash(a.ns), result: s.result(a.id, a.boards[0]) });
+  const hidden = audienceEvent(s.state.event);
+  assert.equal(Object.keys(hidden.results).length, 0);
+  assert.equal('club' in hidden, false);
+  assert.equal('audit' in hidden, false);
+  assert.equal('deal' in JSON.parse(JSON.stringify(hidden.boards[0])), false);
+  s.apply({ action: 'club-finalize', round: 1, force: true });
+  assert.ok(s.state.event.club!.finalized.includes(1));
+  assert.ok(Object.values(s.state.event.club!.confirmations).every(c => c.forced));
+  assert.ok(s.state.event.audit.at(-1)!.changes!.every(c => c.after?.status === 'cancelled'));
+  assert.ok(Object.keys(audienceEvent(s.state.event).results).length > 0);
+  assert.throws(() => s.apply({ action: 'club-play', round: 1, confirm: false, tokenHash: s.hash(a.ns), result: s.result(a.id, a.boards[0]) }), /不開放/);
+  s.apply({ action: 'round-control', round: 2, phase: 'playing' });
+  assert.equal(clubView(s.state.event, a.ns).locked, false);
+  s.apply({ action: 'club-finalize', round: 2, force: true });
+  s.apply({ action: 'settings', status: 'finished' });
+  assert.equal(s.state.event.status, 'finished');
+});
+test('club ordinary finalization requires both pairs and retries do not duplicate audit', () => {
+  const s = setup();
+  for (const a of s.state.event.assignments.filter(a => a.round === 1)) {
+    for (const b of a.boards) s.apply({ action: 'club-play', round: 1, confirm: false, tokenHash: s.hash(a.ns), result: s.result(a.id, b) });
+    for (const pair of [a.ns, a.ew]) s.apply({ action: 'club-play', round: 1, confirm: true, tokenHash: s.hash(pair) });
+  }
+  s.apply({ action: 'club-finalize', round: 1, force: false, requestId: 'finalize-once' });
+  const state = s.state;
+  s.apply({ action: 'club-finalize', round: 1, force: false, requestId: 'finalize-once' });
+  assert.equal(s.state, state);
+  assert.ok(Object.values(state.event.club!.confirmations).every(c => !c.forced));
+});
+test('bye pair cannot submit and completed round does not expose a reused board deal', () => {
+  const s = setup(5);
+  const assigned = s.state.event.assignments.filter(a => a.round === 1).flatMap(a => [a.ns, a.ew]);
+  const bye = s.state.event.participants.find(p => !assigned.includes(p.id))!;
+  assert.equal(clubView(s.state.event, bye.id).assignment, undefined);
+  assert.throws(() => s.apply({ action: 'club-play', round: 1, confirm: true, tokenHash: s.hash(bye.id) }), /輪空/);
+  const number = s.state.event.assignments[0].boards[0];
+  s.state.event.assignments.find(a => a.round === 2)!.boards.push(number);
+  s.apply({ action: 'club-finalize', round: 1, force: true });
+  assert.equal(audienceEvent(s.state.event).boards.find(b => b.number === number)!.published, false);
+});

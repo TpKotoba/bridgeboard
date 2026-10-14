@@ -55,6 +55,12 @@ export type Audit = {
   changes?: { key: string; before: Result | null; after: Result | null }[];
 };
 export type BridgeEvent = {
+  club?: {
+    enabled: boolean;
+    tokens: Record<string, string>;
+    confirmations: Record<string, { at: string; forced: boolean }>;
+    finalized: number[];
+  };
   id: string;
   name: string;
   prefix?: string;
@@ -115,6 +121,9 @@ export const createSchema = z
       ctx.addIssue({ code: 'custom', message: '每場最多 128 副' });
   });
 export const mutationSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('club-config'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), enabled: z.boolean(), participantId: z.string().optional(), tokenHash: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict(),
+  z.object({ action: z.literal('club-play'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), tokenHash: z.string().regex(/^[a-f0-9]{64}$/), round: z.number().int().min(1), confirm: z.boolean(), result: resultSchema.optional() }).strict(),
+  z.object({ action: z.literal('club-finalize'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), round: z.number().int().min(1), force: z.boolean() }).strict(),
   z
     .object({
       action: z.literal('round-control'),

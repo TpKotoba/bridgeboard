@@ -1,4 +1,5 @@
 'use client';
+import { ClubAdmin } from './club-admin';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { boardGroups, boardRange } from '@/lib/board-groups';
 import { roundProgress } from '@/lib/round-progress';
@@ -2341,6 +2342,7 @@ function AdminPanel({
       <div className="admin-tabs">
         {[
           ['score', '收分／更正'],
+          ...(event.canDirect && event.kind === 'pairs' ? [['club', '俱樂部收分']] : []),
           ...(event.canDirect ? [['round-progress', '圈次進度']] : []),
           ...(event.canDirect ? [['import', '匯入／匯出']] : []),
           ['publish', event.canDirect ? '發布設定' : '賽事設定'],
@@ -2360,6 +2362,7 @@ function AdminPanel({
         ))}
       </div>
       <div className="admin-content">
+        {section === 'club' && event.canDirect && event.kind === 'pairs' && <ClubAdmin event={event} reload={load} />}
         {section === 'round-progress' && event.canDirect && (
           <>
             <form

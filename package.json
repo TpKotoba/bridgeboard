@@ -20,6 +20,7 @@
     "bridge-dds": "^1.4.0",
     "lucide-react": "^0.468.0",
     "next": "^16.0.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "zod": "^4.0.0"
@@ -30,7 +31,8 @@
     "@types/react-dom": "^19.0.0",
     "prettier": "^3.9.10",
     "tsx": "^4.20.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "@types/qrcode": "^1.5.6"
   },
   "engines": {
     "node": ">=22"

@@ -141,7 +141,67 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     at = new Date().toISOString();
   const changes: { key: string; before: Result | null; after: Result | null }[] = [];
   let detail: string | undefined;
-  if (command.action === 'results') {
+  if (command.action === 'club-config') {
+    if (e.kind !== 'pairs') throw new DomainError('俱樂部模式僅支援雙人賽');
+    e.club ??= { enabled: false, tokens: {}, confirmations: {}, finalized: [] };
+    e.club.enabled = command.enabled;
+    if (command.participantId) {
+      if (!e.participants.some(p => p.id === command.participantId) || !command.tokenHash) throw new DomainError('搭檔或連結無效');
+      e.club.tokens[command.participantId] = command.tokenHash;
+      detail = '重新簽發 ' + command.participantId + ' 輸入連結；舊連結失效';
+    }
+  } else if (command.action === 'club-play') {
+    const club = e.club;
+    const pair = Object.entries(club?.tokens ?? {}).find(([, hash]) => hash === command.tokenHash)?.[0];
+    if (!club?.enabled || !pair) throw new DomainError('連結無效或俱樂部模式未開啟', 403);
+    if (e.status !== 'live' || command.round !== e.currentRound || e.roundPhase === 'break' || club.finalized.includes(command.round)) throw new DomainError('目前不開放此圈輸入', 409);
+    const confirmation = command.round + ':' + pair;
+    if (club.confirmations[confirmation]) throw new DomainError('本搭檔已確認，本圈輸入已鎖定', 403);
+    const a = e.assignments.find(a => a.round === command.round && (a.ns === pair || a.ew === pair));
+    if (!a) throw new DomainError('本圈輪空，無需提交');
+    if (command.confirm) {
+      if (command.result) throw new DomainError('確認不可同時提交成績');
+      if (a.boards.some(b => !e.results[resultKey(a.id, b)])) throw new DomainError('尚有未輸入的牌，請完成後確認');
+      club.confirmations[confirmation] = { at, forced: false };
+      detail = pair + ' 確認第 ' + command.round + ' 圈';
+    } else {
+      const r = command.result;
+      if (!r || r.assignmentId !== a.id || !a.boards.includes(r.board)) throw new DomainError('只能輸入本搭檔當圈成績', 403);
+      const b = e.boards.find(b => b.number === r.board)!;
+      const key = resultKey(a.id, b.number);
+      if (e.results[key]?.status === 'cancelled') throw new DomainError('取消的牌只能由裁判恢復', 403);
+      const after = { ...r, status: 'played' as const, nsScore: contractScore(r, b.vulnerability), updatedAt: at };
+      changes.push({ key, before: e.results[key] ?? null, after });
+      e.results[key] = after;
+      detail = pair + ' 提交第 ' + command.round + ' 圈';
+    }
+  } else if (command.action === 'club-finalize') {
+    const club = e.club;
+    if (!club?.enabled || e.status !== 'live' || command.round !== e.currentRound || club.finalized.includes(command.round)) throw new DomainError('此圈無法結算');
+    const assignments = e.assignments.filter(a => a.round === command.round);
+    if (!assignments.length) throw new DomainError('此圈尚未安排賽程');
+    for (const a of assignments) {
+      for (const pair of [a.ns, a.ew]) {
+        const key = command.round + ':' + pair;
+        if (!club.confirmations[key]) {
+          if (!command.force) throw new DomainError('尚有搭檔未確認');
+          club.confirmations[key] = { at, forced: true };
+        }
+      }
+      for (const board of a.boards) {
+        const key = resultKey(a.id, board);
+        if (!e.results[key]) {
+          if (!command.force) throw new DomainError('尚有成績未收齊');
+          const after: Result = { assignmentId: a.id, board, level: 0, strain: 'NT', doubled: 1, declarer: 'N', tricks: 0, lead: '', status: 'cancelled', nsScore: 0, updatedAt: at };
+          changes.push({ key, before: null, after });
+          e.results[key] = after;
+        }
+      }
+    }
+    club.finalized.push(command.round);
+    e.roundPhase = 'break';
+    detail = '第 ' + command.round + ' 圈結算並發布' + (command.force ? '（強制確認並取消未收牌）' : '');
+  } else if (command.action === 'results') {
     if (e.status === 'finished') throw new DomainError('請先重新開放賽事，再更正成績。');
     const seen = new Set<string>();
     for (const r of command.results) {
@@ -191,16 +251,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       Object.keys(e.results).length !== e.assignments.reduce((n, a) => n + a.boards.length, 0)
     )
       throw new DomainError('還有未收齊的成績，不能結束賽事。');
-    if (
-      command.status === 'finished' &&
-      e.kind === 'pairs' &&
-      e.boards.some(
-        (b) =>
-          Object.values(e.results).filter((r) => r.board === b.number && r.status !== 'cancelled')
-            .length === 1,
-      )
-    )
-      throw new DomainError('有牌只剩一桌有效結果，無法比較；請裁判處理後再結束。');
+    if (command.status === 'finished' && e.club?.enabled && e.assignments.some(a => !e.club!.finalized.includes(a.round))) throw new DomainError('請先結算所有圈次');
     e.status = command.status;
     if (command.name !== undefined) e.name = command.name;
     if (command.prefix !== undefined) e.prefix = command.prefix;
@@ -333,6 +384,9 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
   e.audit.push({
     at,
     action: {
+      'club-config': '俱樂部模式設定',
+      'club-play': '搭檔提交／確認',
+      'club-finalize': '圈次結算',
       results: '收分／更正',
       settings: '發布設定',
       pbn: '匯入牌型',

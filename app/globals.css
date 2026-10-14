@@ -3589,3 +3589,27 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
   font-size: 10px;
   color: #8c948b;
 }
+
+.club-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+.club-page header { margin-bottom: 24px; }
+.club-page h1 { font-size: 26px; }
+.club-page h2 { font-size: 20px; margin: 0 0 12px; }
+.club-section { padding: 20px; margin-bottom: 16px; }
+.club-section p { line-height: 1.7; }
+.club-board-list { display: grid; gap: 10px; margin: 16px 0; }
+.club-board-list > button { display: flex; justify-content: space-between; flex-wrap: wrap; min-height: 52px; }
+.club-page .field select, .club-page .field input { min-height: 48px; font-size: 16px; }
+.club-admin h4 { margin: 24px 0 12px; }
+.club-admin p { line-height: 1.6; }
+.club-pair-links { display: grid; gap: 8px; margin: 16px 0; }
+.club-pair-links > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.club-pair-links > div > span { min-width: 0; }
+.club-pair-links button { flex-shrink: 0; }
+.club-link-card { display: flex; flex-direction: column; align-items: center; gap: 12px; border: 1px solid var(--line); padding: 16px; border-radius: 8px; }
+.club-link-card img { max-width: 100%; height: auto; }
+.club-link-card input { width: 100%; min-width: 0; }
+.club-progress-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
