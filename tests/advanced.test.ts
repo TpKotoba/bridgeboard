@@ -217,6 +217,21 @@ test('cancelled team boards contribute no IMP and an entirely cancelled match ea
   assert.ok(p.standings.every((s) => s.score === 0 && s.played === 0));
 });
 const meta = { revision: 1, requestId: 'test', reason: '裁判測試' };
+test('award and movement descriptions persist and can be cleared independently', () => {
+  const e = event();
+  const saved = applyMutation({ event: e, projection: project(e), requests: [] }, {
+    ...meta, action: 'settings', status: 'live', awardPlaces: 2,
+    awardDescription: '前兩名獎狀', movementDescription: '依公布桌次換位；輪空請休息。',
+  });
+  assert.equal(saved.event.awardDescription, '前兩名獎狀');
+  assert.equal(saved.event.movementDescription, '依公布桌次換位；輪空請休息。');
+  const cleared = applyMutation(saved, {
+    ...meta, revision: saved.event.revision, requestId: 'clear-description',
+    action: 'settings', status: 'live', awardDescription: '',
+  });
+  assert.equal(cleared.event.awardDescription, '');
+  assert.equal(cleared.event.movementDescription, saved.event.movementDescription);
+});
 test('CrossIMP averages pairwise IMPs and Butler uses a rounded arithmetic datum', () => {
   assert.equal(impPairScore(420, [420, 170, -50], 0, 'crossimp', 'none').value, 8);
   assert.deepEqual(impPairScore(420, [420, 170, -50], 0, 'butler', 'none'), {

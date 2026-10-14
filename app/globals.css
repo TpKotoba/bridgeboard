@@ -3499,3 +3499,93 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
 .your-contract .contract-seat {
   margin-left: 0.2em;
 }
+
+@media (max-width: 560px) {
+  .board-information .board-nav.board-jump {
+    grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+  }
+  .board-information .board-nav button {
+    width: 100%;
+    height: 44px;
+  }
+  .board-information .board-nav button svg {
+    width: 19px;
+    height: 19px;
+  }
+  .board-information .board-number-picker {
+    min-height: 40px;
+  }
+}
+.cancelled-contract {
+  font: inherit;
+  color: inherit;
+}
+.description-text {
+  white-space: pre-wrap;
+}
+.form-grid > *,
+.field {
+  min-width: 0;
+}
+.field input[type='date'],
+.field input[type='time'],
+.field input[type='datetime-local'] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.field input::-webkit-date-and-time-value {
+  text-align: left;
+  min-height: 1.4em;
+}
+.event-description-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.event-description-settings textarea {
+  width: 100%;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.seating-note {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+.seating-participant {
+  min-width: 0;
+}
+.seating-name {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.seating-name b {
+  flex-shrink: 0;
+  font-size: 10px;
+  margin: 0;
+}
+.seating-name span,
+.seating-participant small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.seating-participant small {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #8c948b;
+}

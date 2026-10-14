@@ -249,7 +249,7 @@ export function DealExplorer({
   const actualContract = !result
     ? '待收分'
     : result.status === 'cancelled'
-      ? 'Cancelled'
+      ? '取消'
       : result.level === 0
         ? 'PASS'
         : `${result.level}${symbols[result.strain]}${result.doubled === 2 ? 'x' : result.doubled === 4 ? 'xx' : ''}.${result.declarer}`;

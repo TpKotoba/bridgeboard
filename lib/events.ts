@@ -205,6 +205,8 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     if (command.name !== undefined) e.name = command.name;
     if (command.prefix !== undefined) e.prefix = command.prefix;
     if (command.awardPlaces !== undefined) e.awardPlaces = command.awardPlaces;
+    if (command.awardDescription !== undefined) e.awardDescription = command.awardDescription;
+    if (command.movementDescription !== undefined) e.movementDescription = command.movementDescription;
     if (command.publishBoards !== undefined && command.publishBoards !== e.publishBoards)
       throw new DomainError('請使用每副牌的公開開關。');
   } else if (command.action === 'board-publication') {

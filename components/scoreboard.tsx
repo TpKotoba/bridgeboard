@@ -143,7 +143,7 @@ function download(name: string, text: string, type = 'text/plain') {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function Contract({ result }: { result?: Result }) {
-  if (result?.status === 'cancelled') return <span className="badge">Cancelled</span>;
+  if (result?.status === 'cancelled') return <span className="cancelled-contract">取消</span>;
   return result ? (
     <span className={`contract ${result.strain === 'H' || result.strain === 'D' ? 'red' : ''}`}>
       {displayContract(result)}{' '}
@@ -811,6 +811,8 @@ export default function Scoreboard() {
                       value={event.participants.length}
                       suffix={event.kind === 'teams' ? '隊' : '對'}
                       icon={<Users />}
+                      popoverTarget="award-information"
+                      onClick={(e) => positionDetail(e.currentTarget)}
                     />
                     <Stat
                       label="目前圈數"
@@ -834,6 +836,8 @@ export default function Scoreboard() {
                       value={event.boards.length}
                       suffix="副"
                       icon={<Spade />}
+                      popoverTarget="movement-information"
+                      onClick={(e) => positionDetail(e.currentTarget)}
                       detail={`每圈 ${event.boardsPerRound} 牌`}
                     />
                     <Stat
@@ -849,6 +853,17 @@ export default function Scoreboard() {
                       onClick={(e) => positionDetail(e.currentTarget)}
                     />
                   </div>
+                  <div id="award-information" popover="auto" className="player-detail-popover">
+                    <strong>給獎資訊</strong>
+                    <div>{(event.awardPlaces ?? 3) === 0 ? '不給獎' : '給獎範圍：前 ' + (event.awardPlaces ?? 3) + ' 名（同分並列）'}</div>
+                    <div className="description-text">{event.awardDescription || '尚未公布給獎內容'}</div>
+                  </div>
+                  <div id="movement-information" popover="auto" className="player-detail-popover">
+                    <strong>Movement 說明</strong>
+                    <div className="description-text">{event.movementDescription || '尚未提供詳細說明'}</div>
+                    <div>{event.rounds} 圈，每圈 {event.boardsPerRound} 牌；共 {event.boards.length} 副牌。</div>
+                    <div>實際對戰、牌組與輪空請見「輪次與對戰」。</div>
+                  </div>
                   <div
                     id="current-round-information"
                     key={`time-${event.id}-${event.currentRound}`}
@@ -862,7 +877,7 @@ export default function Scoreboard() {
                     </strong>
                     <div>
                       {currentTiming
-                        ? `${new Date(currentTiming.startAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })} — ${new Date(currentTiming.endAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })}（臺灣時間）`
+                        ? `${new Date(currentTiming.startAt).toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false, hour: '2-digit', minute: '2-digit' })} — ${new Date(currentTiming.endAt).toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false, hour: '2-digit', minute: '2-digit' })}（臺灣時間）`
                         : '尚未設定本圈時間區間'}
                     </div>
                   </div>
@@ -1177,6 +1192,7 @@ export default function Scoreboard() {
                                                 {score == null
                                                   ? '—'
                                                   : `${pairMethod !== 'mp' && score >= 0 ? '+' : ''}${number(score, pairMethod === 'butler' && Number.isInteger(score) ? 0 : 2)}${pairMethod === 'mp' ? '%' : ' IMP'}`}
+                                                {standing && ` / #${standing.rank}`}
                                               </small>
                                             </span>
                                           </button>
@@ -1378,7 +1394,7 @@ export default function Scoreboard() {
                                           </td>
                                           <td className="accent mono">
                                             {x?.status === 'cancelled' || y?.status === 'cancelled'
-                                              ? 'Cancelled'
+                                              ? '取消'
                                               : x && y
                                                 ? signed(imps(x.nsScore + y.nsScore))
                                                 : '—'}
@@ -2405,8 +2421,8 @@ function AdminPanel({
                 void save({
                   action: 'round-timing',
                   round: timingRound,
-                  startAt: start ? new Date(`${start}+08:00`).toISOString() : null,
-                  endAt: end ? new Date(`${end}+08:00`).toISOString() : null,
+                  startAt: start ? new Date(`${form.get("startDate")}T${start}+08:00`).toISOString() : null,
+                  endAt: end ? new Date(`${form.get("endDate")}T${end}+08:00`).toISOString() : null,
                   reason: `設定第 ${timingRound} 圈時間區間`,
                 });
               }}
@@ -2428,23 +2444,21 @@ function AdminPanel({
               <div className="form-grid">
                 <label className="field">
                   開始時間（臺灣時間）
-                  <input
-                    type="datetime-local"
-                    name="startAt"
-                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.startAt)}
-                  />
+                  <input type="date" name="startDate" aria-label="開始日期" required
+                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.startAt).slice(0, 10) || event.date} />
+                  <input type="time" name="startAt" aria-label="開始時間"
+                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.startAt).slice(11, 16)} />
                 </label>
                 <label className="field">
                   預定結束時間（臺灣時間）
-                  <input
-                    type="datetime-local"
-                    name="endAt"
-                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.endAt)}
-                  />
+                  <input type="date" name="endDate" aria-label="結束日期" required
+                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.endAt).slice(0, 10) || event.date} />
+                  <input type="time" name="endAt" aria-label="結束時間"
+                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.endAt).slice(11, 16)} />
                 </label>
               </div>
               <p className="footnote">
-                開始與結束需一起填寫；兩欄清空後儲存，可清除本圈時間。時間不會自動切換圈次。
+                開始與結束需一起填寫；兩個時間欄清空後儲存，可清除本圈時間。時間不會自動切換圈次。
               </p>
               <button className="button subtle" disabled={busy}>
                 儲存時間區間
@@ -2519,12 +2533,19 @@ function AdminPanel({
               </label>
             </div>
             <div className="seating-note">
-              <span>
-                <b>NS</b> {selected ? name(selected.ns) : ''}
-              </span>
-              <span>
-                <b>EW</b> {selected ? name(selected.ew) : ''}
-              </span>
+              {(['NS', 'EW'] as const).map((side) => {
+                const id = selected?.[side === 'NS' ? 'ns' : 'ew'];
+                const standing = event.projection.standings.find((s) => s.id === id);
+                const method = event.pairMethod ?? 'mp';
+                const score = standing?.score;
+                const summary = id ? `${id.toUpperCase()} / ${score == null ? '—' : `${score >= 0 && method !== 'mp' ? '+' : ''}${number(score, method === 'butler' && Number.isInteger(score) ? 0 : 2)}${event.kind === 'teams' ? ' VP' : method === 'mp' ? '%' : ' IMP'}`}${standing ? ` / #${standing.rank}` : ''}` : '—';
+                return <div className="seating-participant" key={side}>
+                  <div className="seating-name" title={id ? name(id) : ''}>
+                    <b>{side}</b><span>{id ? name(id) : '—'}</span>
+                  </div>
+                  <small title={summary}>{summary}</small>
+                </div>;
+              })}
             </div>
             <div className="form-grid four">
               <label className="field">
@@ -2916,7 +2937,7 @@ function AdminPanel({
               </>
             )}
             <form
-              className="setting-row"
+              className="setting-row event-description-settings"
               onSubmit={(e) => {
                 e.preventDefault();
                 const form = new FormData(e.currentTarget);
@@ -2924,7 +2945,9 @@ function AdminPanel({
                   action: 'settings',
                   status: event.status,
                   awardPlaces: Number(form.get('awardPlaces')),
-                  reason: '設定給獎名次',
+                  awardDescription: String(form.get('awardDescription') ?? ''),
+                  movementDescription: String(form.get('movementDescription') ?? ''),
+                  reason: '設定給獎與賽程說明',
                 });
               }}
             >
@@ -2940,8 +2963,14 @@ function AdminPanel({
                   defaultValue={event.awardPlaces ?? 3}
                 />
               </label>
+              <label className="field">給獎內容
+                <textarea name="awardDescription" maxLength={2000} defaultValue={event.awardDescription ?? ''} />
+              </label>
+              <label className="field">Movement 說明
+                <textarea name="movementDescription" maxLength={4000} defaultValue={event.movementDescription ?? ''} />
+              </label>
               <button className="button subtle" disabled={busy}>
-                儲存給獎設定
+                儲存給獎與賽程說明
               </button>
             </form>
             <div className="setting-row">
