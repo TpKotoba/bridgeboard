@@ -28,6 +28,8 @@ export default function CompetitionHub({ competitionId }: { competitionId?: stri
   const [creating, setCreating] = useState(false);
   const [addingStage, setAddingStage] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [date, setDate] = useState('');
   const load = useCallback(async () => {
@@ -50,11 +52,14 @@ export default function CompetitionHub({ competitionId }: { competitionId?: stri
     <div className="main-shell">
       <header className="topbar"><Breadcrumbs items={[{ label: competition?.name ?? (competitionId ? '賽事主頁' : '瀏覽賽事') }]} />
         {session.admin ? <div className="hub-account" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setSessionExpanded(false); }} onKeyDown={e => { if (e.key === 'Escape') setSessionExpanded(false); }}>
-          <SessionControl director={session.director} onMenu={() => setSessionExpanded(!sessionExpanded)} onLogout={async () => {
+          <SessionControl director={session.director} menuLabel={!competitionId && session.director ? '刪除比賽' : '功能表'} onMenu={() => {
+            if (!competitionId && session.director) { setDeleting(true); setNotice(''); }
+            else setSessionExpanded(!sessionExpanded);
+          }} onLogout={async () => {
             try {
               const response = await fetch('/api/session', { method: 'DELETE' });
               if (!response.ok) throw new Error('登出失敗，請再試一次。');
-              setSession({ admin: false, director: false }); setSessionExpanded(false); setCreating(false); setAddingStage(false); setEditing(false);
+              setSession({ admin: false, director: false }); setSessionExpanded(false); setCreating(false); setAddingStage(false); setEditing(false); setDeleting(false);
             } catch (e) { setError((e as Error).message); }
           }} />
           {sessionExpanded && <div id="hub-account-menu" className="hub-account-menu">
@@ -64,6 +69,7 @@ export default function CompetitionHub({ competitionId }: { competitionId?: stri
         </div> : <button className="hub-session" onClick={() => setLogin(!login)}>賽事管理</button>}
       </header>
       <main>
+        {notice && <div className="alert success" role="status">{notice}</div>}
         {error && <div className="alert error" role="alert">{error}<button onClick={() => { setError(''); void load().catch(e => setError(e.message)); }}>重新載入</button></div>}
         {login && !session.admin && <Modal title="裁判／賽務登入" onClose={() => { setLogin(false); setLoginError(''); setShowPassword(false); }}><form onSubmit={async e => {
           e.preventDefault(); const form = new FormData(e.currentTarget); setBusy(true); setLoginError('');
@@ -114,5 +120,55 @@ export default function CompetitionHub({ competitionId }: { competitionId?: stri
     </div>
     {creating && <CreateDialog onClose={() => setCreating(false)} onCreated={async id => { location.assign(`/?competition=${encodeURIComponent(id)}`); }} />}
     {addingStage && competition && <CreateDialog competition={competition} onClose={() => { setAddingStage(false); void load().catch(e => setError(e.message)); }} onCreated={async () => { await load(); setAddingStage(false); }} />}
+    {deleting && session.director && <DeleteCompetitionsDialog competitions={competitions} onClose={() => setDeleting(false)} onRefresh={load} onDeleted={async count => {
+      setDeleting(false); setNotice(`已刪除 ${count} 場比賽。`); await load();
+    }} />}
   </div>;
+}
+
+function DeleteCompetitionsDialog({ competitions, onClose, onRefresh, onDeleted }: {
+  competitions: Competition[];
+  onClose: () => void;
+  onRefresh: () => Promise<void>;
+  onDeleted: (count: number) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [query, setQuery] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const visible = competitions.filter(c => `${c.prefix} ${c.name} ${c.date}`.toLowerCase().includes(query.toLowerCase()));
+  const chosen = competitions.filter(c => selected.includes(c.id));
+  async function remove() {
+    if (busy || !chosen.length) return;
+    setBusy(true); setError('');
+    try {
+      const result = await request<{ deleted: number }>('/api/admin/competitions', {
+        competitions: chosen.map(c => ({ id: c.id, stages: c.stages.map(s => ({ id: s.id, revision: s.revision })) })),
+      }, 'DELETE');
+      await onDeleted(result.deleted);
+    } catch (e) {
+      setError((e as Error).message); setConfirming(false); setSelected([]);
+      await onRefresh().catch(() => {});
+    } finally { setBusy(false); }
+  }
+  return <Modal title={confirming ? '確認刪除比賽' : '刪除比賽'} onClose={() => { if (!busy) onClose(); }}>
+    <p>刪除比賽會一併刪除其所有賽段、名單與成績，無法復原。</p>
+    {error && <p className="alert error" role="alert">{error}</p>}
+    {!confirming && <>
+      <label className="field">搜尋比賽<input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="名稱或日期" /></label>
+      <div className="button-row"><button type="button" className="button subtle" disabled={!visible.length} onClick={() => setSelected(previous => [...new Set([...previous, ...visible.map(c => c.id)])])}>全選搜尋結果</button><button type="button" className="button subtle" disabled={!selected.length} onClick={() => setSelected([])}>清除勾選</button></div>
+    </>}
+    <div className="delete-competition-list">
+      {(confirming ? chosen : visible).map(c => <label className="delete-competition-option" key={c.id}>
+        {!confirming && <input type="checkbox" checked={selected.includes(c.id)} onChange={e => setSelected(previous => e.target.checked ? [...previous, c.id] : previous.filter(id => id !== c.id))} />}
+        <span><strong>{[c.prefix, c.name].filter(Boolean).join(' ')}</strong><small>{c.date} · {c.stages.length} 個賽段</small></span>
+      </label>)}
+      {!visible.length && !confirming && <p>沒有符合的比賽。</p>}
+    </div>
+    <div className="button-row">
+      <button type="button" className="button subtle" disabled={busy} onClick={() => confirming ? setConfirming(false) : onClose()}>{confirming ? '返回勾選' : '取消'}</button>
+      <button type="button" className="button danger" disabled={busy || !chosen.length} onClick={() => confirming ? void remove() : setConfirming(true)}>{busy ? '刪除中…' : confirming ? `確認刪除 ${chosen.length} 場` : `刪除所選 ${chosen.length} 場`}</button>
+    </div>
+  </Modal>;
 }

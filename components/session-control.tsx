@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export function SessionControl({ director, onMenu, onLogout }: {
+export function SessionControl({ director, onMenu, onLogout, menuLabel = '功能表' }: {
   director: boolean;
   onMenu: () => void;
   onLogout: () => Promise<void>;
+  menuLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -20,7 +21,7 @@ export function SessionControl({ director, onMenu, onLogout }: {
         setBusy(true);
         try { await onLogout(); } finally { setBusy(false); }
       }}>{busy ? '處理中' : `${director ? '裁判' : '賽務'}登出`}</button>
-      <button ref={menuButton} type="button" className="identity-menu" onClick={() => { setExpanded(false); onMenu(); }}>功能表</button>
+      <button ref={menuButton} type="button" className="identity-menu" onClick={() => { setExpanded(false); onMenu(); }}>{menuLabel}</button>
     </>}
   </div>;
 }

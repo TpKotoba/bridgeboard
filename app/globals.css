@@ -827,6 +827,10 @@ tbody tr.followed {
   white-space: nowrap;
   overflow-wrap: normal;
 }
+.butler-total {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
 .butler-imp {
   display: inline-block;
   margin-left: 5px;
@@ -3760,6 +3764,10 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
 .club-progress-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
 
 .score-actions .button { font-size: 14px; min-height: 44px; padding: 10px 12px; }
+.score-actions .score-save { background: #edf3ef; border-color: #cddbd2; color: #416552; }
+.score-actions .score-save:hover { background: #e3ece6; }
+.score-actions .button.danger { background: #f7efed; border-color: #e5d4d0; color: #895b56; }
+.score-actions .button.danger:hover { background: #f0e4e1; }
 
 .panel-heading.admin-panel-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 8px; }
 .admin-panel-heading > h3 { margin: 0; white-space: nowrap; }
@@ -3801,6 +3809,12 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
 .hub-section-heading h2 { font-size: 21px; }
 .hub-section-heading p { color: #7d897d; }
 .hub-search { max-width: 460px; margin-bottom: 24px; }
+.delete-competition-list { max-height: 45dvh; overflow-y: auto; margin: 16px 0; }
+.delete-competition-option { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.delete-competition-option input { width: 18px; height: 18px; flex: 0 0 18px; }
+.delete-competition-option > span { min-width: 0; overflow-wrap: anywhere; }
+.delete-competition-option strong { display: block; font-size: 14px; }
+.delete-competition-option small { display: block; margin-top: 4px; color: var(--muted); }
 .valet-system-title { white-space: nowrap; }
 .valet-wordmark { font-family: Georgia, 'Times New Roman', serif; letter-spacing: -0.045em; }
 .valet-wordmark sub, .valet-wordmark sup { position: relative; vertical-align: baseline; font-size: 0.72em; line-height: 0; }

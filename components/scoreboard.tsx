@@ -455,8 +455,22 @@ export default function Scoreboard() {
       : openResult.status === 'average' || closedResult.status === 'average'
         ? 0
         : imps(openResult.nsScore - closedResult.nsScore) * (a.ns === playerId ? 1 : -1);
-    return { a, b, closed, impDiff };
+    const scores = (event?.assignments ?? []).filter(other => other.boards.includes(b))
+      .map(other => event?.results[resultKey(other.id, b)])
+      .filter(result => result && result.status !== 'cancelled' && result.status !== 'average')
+      .map(result => result!.nsScore);
+    const mean = scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null;
+    const datum = mean === null ? null : Math.sign(mean) * Math.round(Math.abs(mean) / 10) * 10;
+    const butlers = [a, closed].map(assignment => {
+      const result = assignment ? event?.results[resultKey(assignment.id, b)] : undefined;
+      return result && assignment && result.status !== 'cancelled' && result.status !== 'average' && datum !== null
+        ? imps(result.nsScore - datum) * (assignment.ns === playerId ? 1 : -1) : null;
+    });
+    return { a, b, closed, impDiff, butlers };
   });
+  const playerButlers = teamPlayerRows.flatMap(row => row.butlers).filter((value): value is number => value !== null);
+  const playerButlerTotal = playerButlers.reduce((sum, value) => sum + value, 0);
+  const cumulativePlayerStandings = event?.kind === 'teams' ? teamStandingsThroughRound(event, playerRound) : [];
   const playerImpTotal = teamPlayerRows.reduce((total, row) => total + (row.impDiff ?? 0), 0);
   const playerImpFor = teamPlayerRows.reduce((total, row) => total + Math.max(0, row.impDiff ?? 0), 0);
   const playerImpAgainst = teamPlayerRows.reduce((total, row) => total + Math.max(0, -(row.impDiff ?? 0)), 0);
@@ -1571,13 +1585,7 @@ export default function Scoreboard() {
                         {event.kind === 'teams' && <table className="team-player-results">
                           <thead><tr><th>牌號</th><th>公開</th><th>關閉</th><th>IMP 差</th></tr></thead>
                           <tbody>
-                            {teamPlayerRows.map(({ a, b, closed, impDiff }) => {
-                              const scores = event.assignments.filter(other => other.boards.includes(b))
-                                .map(other => event.results[resultKey(other.id, b)])
-                                .filter(result => result && result.status !== 'cancelled' && result.status !== 'average')
-                                .map(result => result.nsScore);
-                              const mean = scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null;
-                              const datum = mean === null ? null : Math.sign(mean) * Math.round(Math.abs(mean) / 10) * 10;
+                            {teamPlayerRows.map(({ a, b, closed, impDiff, butlers }) => {
                               const openBoard = (assignment?: Assignment) => {
                                 setSelectedResult(assignment?.id ?? '');
                                 setBoard(b);
@@ -1588,8 +1596,7 @@ export default function Scoreboard() {
                                 {[a, closed].map((assignment, index) => {
                                   const result = assignment ? event.results[resultKey(assignment.id, b)] : undefined;
                                   const ownScore = result && assignment ? result.nsScore * (assignment.ns === playerId ? 1 : -1) : null;
-                                  const butler = result && assignment && result.status !== 'cancelled' && result.status !== 'average' && datum !== null
-                                    ? imps(result.nsScore - datum) * (assignment.ns === playerId ? 1 : -1) : null;
+                                  const butler = butlers[index];
                                   return <td key={index}>
                                     <button className="contract-link" aria-label={`查看牌號 ${displayBoardNumber(b)} ${index === 0 ? '公開' : '關閉'}室成績`} onClick={() => openBoard(assignment)}>
                                       <Contract result={result} />
@@ -1607,9 +1614,22 @@ export default function Scoreboard() {
                             <td colSpan={4}>
                               <div className="team-match-summary" aria-label="本圈比數，我方在左、對手在右">
                                 <span className="muted">IMP 合計</span>
-                                <span className="mono">{teamPlayerRows.some(row => row.impDiff !== null) ? `${playerImpFor} : ${playerImpAgainst}` : '— : —'}</span>
+                                <button type="button" className="contract-link mono" aria-label="查看本圈雙方 Butler IMP" popoverTarget="player-butler-summary" onClick={e => positionDetail(e.currentTarget)}>{teamPlayerRows.some(row => row.impDiff !== null) ? `${playerImpFor} : ${playerImpAgainst}` : '— : —'}</button>
                               <button type="button" className="contract-link" popoverTarget="player-vp-scale" onClick={e => positionDetail(e.currentTarget)}>換算 VP</button>
-                                <span className="mono">{number(playerMatchVp)} : {number(opponentMatchVp)}</span>
+                                <button type="button" className="contract-link mono" aria-label="查看雙方累積 VP" popoverTarget="player-cumulative-vp" onClick={e => positionDetail(e.currentTarget)}>{number(playerMatchVp)} : {number(opponentMatchVp)}</button>
+                              </div>
+                              <div key={`${playerId}-${playerRound}-cumulative`} id="player-cumulative-vp" popover="auto" className="player-detail-popover">
+                                <strong>截至第 {playerRound} 圈 · 累積 VP</strong>
+                                {[playerId, playerMatch ? (playerMatch.ns === playerId ? playerMatch.ew : playerMatch.ns) : undefined].map((id, index) => <div key={index}>
+                                  {index === 0 ? '我方' : '對手'} · {id ? name(id) : '—'}：<span className="mono">{number(cumulativePlayerStandings.find(s => s.id === id)?.score ?? null)} VP</span>
+                                </div>)}
+                                <small className="muted">僅計入已完成對戰的 VP。</small>
+                              </div>
+                              <div key={`${playerId}-${playerRound}-butler`} id="player-butler-summary" popover="auto" className="player-detail-popover">
+                                <strong>第 {playerRound} 圈 · Butler IMP 合計</strong>
+                                <div>我方 · {name(playerId!)}：<span className="butler-total">{playerButlers.length ? signed(playerButlerTotal) : '—'}</span></div>
+                                <div>對手 · {playerMatch ? name(playerMatch.ns === playerId ? playerMatch.ew : playerMatch.ns) : '—'}：<span className="butler-total">{playerButlers.length ? signed(-playerButlerTotal) : '—'}</span></div>
+                                <small className="muted">加總本圈兩室已收的有效成績；取消與平均分不計入。</small>
                               </div>
                               <div key={`${playerId}-${playerRound}-${playerVpBoards}`} id="player-vp-scale" popover="auto" className="player-detail-popover vp-scale-popover">
                                 <strong>第 {playerRound} 圈 · {playerVpBoards} 牌 VP 換算表</strong>
@@ -2402,18 +2422,7 @@ function AdminPanel({
               <p className="footnote">超過後從牌號 1 重新顯示，各圈成績仍獨立保存。</p>
               <button className="button subtle" disabled={busy}>儲存最大牌號</button>
             </form>
-            {event.kind === 'teams' && <details className="panel">
-              <summary>隊伍賽員名單</summary>
-              {event.participants.map(p => <form key={`${p.id}-${event.revision}`} className="round-settings-form" onSubmit={e => {
-                e.preventDefault(); const data = new FormData(e.currentTarget);
-                void save({ action: 'team-roster', participantId: p.id, captain: String(data.get('captain')), players: String(data.get('players')).split(/[\n、]/).map(n => n.trim()).filter(Boolean), reason: '更新隊伍賽員名單' });
-              }}>
-                <h4>{participantNumber(p.id, event.kind)} · {p.name}</h4>
-                <label className="field">隊長<input name="captain" defaultValue={p.captain ?? ''} /></label>
-                <label className="field">賽員（每行一人）<textarea name="players" defaultValue={p.players.split('、').join('\n')} /></label>
-                <button className="button subtle" disabled={busy}>儲存名單</button>
-              </form>)}
-            </details>}
+
             <form
               className="round-settings-form"
               key={`current-${event.currentRound}-${event.roundPhase}`}
@@ -2752,6 +2761,18 @@ function AdminPanel({
         )}
         {section === 'import' && event.canDirect && (
           <>
+            {event.kind === 'teams' && <details className="panel">
+              <summary>隊伍賽員名單</summary>
+              {event.participants.map(p => <form key={`${p.id}-${event.revision}`} className="round-settings-form" onSubmit={e => {
+                e.preventDefault(); const data = new FormData(e.currentTarget);
+                void save({ action: 'team-roster', participantId: p.id, captain: String(data.get('captain')), players: String(data.get('players')).split(/[\n、]/).map(n => n.trim()).filter(Boolean), reason: '更新隊伍賽員名單' });
+              }}>
+                <h4>{participantNumber(p.id, event.kind)} · {p.name}</h4>
+                <label className="field">隊長<input name="captain" defaultValue={p.captain ?? ''} /></label>
+                <label className="field">賽員（每行一人）<textarea name="players" defaultValue={p.players.split('、').join('\n')} /></label>
+                <button className="button subtle" disabled={busy}>儲存名單</button>
+              </form>)}
+            </details>}
             <section className="import-export-section">
               <h4>匯入資料</h4>
               <label className="field">

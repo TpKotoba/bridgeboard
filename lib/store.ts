@@ -6,6 +6,7 @@ import { applyMutation, DomainError, seedEvents } from './events';
 import { BridgeEvent, Mutation, StoredEvent } from './model';
 import { project } from './scoring';
 import { appendStage, inheritCompetition } from './competitions';
+import { deletionTargets, type CompetitionDeletion } from './competition-deletion';
 export function storageMode() {
   const mode = process.env.STORAGE_MODE ?? (process.env.DATABASE_URL ? 'neon' : 'demo');
   if (mode === 'local' && process.env.VERCEL) throw new Error('Vercel 不支援 local 儲存模式');
@@ -81,6 +82,32 @@ export async function deleteEvent(id: string, revision: number) {
   const rows =
     await sql()`DELETE FROM bridge_events WHERE id=${id} AND revision=${revision} AND NOT EXISTS (SELECT 1 FROM bridge_events child WHERE child.document->'event'->>'parentEventId'=${id}) RETURNING id`;
   if (!rows.length) throw new DomainError('賽事已更新或刪除，請重新載入', 409);
+}
+export async function deleteCompetitions(input: CompetitionDeletion) {
+  if (storageMode() === 'demo') throw new DomainError('展示模式無法刪除賽事。', 503);
+  if (storageMode() === 'local') return localLock(async () => {
+    const data = await localRead();
+    const targets = deletionTargets(data, input);
+    const ids = new Set(targets.map(t => t.id));
+    await localSave(data.filter(s => !ids.has(s.event.id)));
+    return input.competitions.length;
+  });
+  const targets = deletionTargets(await listEvents(), input);
+  const roots = input.competitions.map(c => c.id);
+  // Lock the complete families and recheck every revision before a single atomic delete.
+  const rows = await sql()`WITH expected AS (
+    SELECT * FROM jsonb_to_recordset(${JSON.stringify(targets)}::jsonb) AS x(id text, revision integer)
+  ), locked AS MATERIALIZED (
+    SELECT id, revision FROM bridge_events
+    WHERE id IN (SELECT id FROM expected)
+      OR document->'event'->>'parentEventId' IN (SELECT jsonb_array_elements_text(${JSON.stringify(roots)}::jsonb))
+    ORDER BY id FOR UPDATE
+  ), valid AS (
+    SELECT 1 WHERE (SELECT count(*) FROM locked) = (SELECT count(*) FROM expected)
+      AND NOT EXISTS (SELECT 1 FROM expected e LEFT JOIN locked l ON l.id=e.id AND l.revision=e.revision WHERE l.id IS NULL)
+  ) DELETE FROM bridge_events WHERE id IN (SELECT id FROM locked) AND EXISTS (SELECT 1 FROM valid) RETURNING id`;
+  if (rows.length !== targets.length) throw new DomainError('賽事已更新，請重新載入清單後再刪除', 409);
+  return input.competitions.length;
 }
 export async function insertEvent(event: BridgeEvent) {
   if (storageMode() === 'demo') throw new DomainError('展示模式無法儲存，請先設定資料庫。', 503);
