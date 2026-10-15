@@ -1,5 +1,6 @@
 'use client';
 import { Breadcrumbs } from './breadcrumbs';
+import { MiniContractFields } from './mini-contract-fields';
 import { participantNumber } from '@/lib/participant-number';
 import { EventCalendar } from './event-calendar';
 import { Info } from 'lucide-react';
@@ -120,6 +121,7 @@ function signed(n: number) {
   return n > 0 ? `+${n}` : String(n);
 }
 function displayContract(r: ResultInput) {
+  if (r.miniBridge) return `${suitSymbols[r.strain]} ${r.level === 1 ? '一線' : '成局'}`;
   return r.level === 0
     ? 'PASS'
     : `${r.level}${suitSymbols[r.strain]}${r.doubled === 2 ? 'x' : r.doubled === 4 ? 'xx' : ''}`;
@@ -714,6 +716,7 @@ export default function Scoreboard() {
                       </div>
                       <div className="event-meta">
                         <span className="event-format">
+                          {event.gameMode === 'minibridge' && 'MiniBridge · 無身價 · '}
                           {event.kind === 'teams'
                             ? 'IMP · WBF 20-0 VP'
                             : `${methodNames[pairMethod]} · 合併排名 · ${event.trim === 'one' ? '各去一筆' : event.trim === 'ten-percent' ? '各去 10%' : '不去頭尾'}`}
@@ -1210,6 +1213,7 @@ export default function Scoreboard() {
                             <DealExplorer
                               key={`${event.id}:${selectedBoard.number}`}
                               board={selectedBoard}
+                              miniBridge={event.gameMode === 'minibridge'}
                               result={activeResult}
                               playerNames={activeNames}
                               resultSelection={resultSelection}
@@ -2015,6 +2019,7 @@ export function CreateDialog({
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const [method, setMethod] = useState('mp');
+  const [gameMode, setGameMode] = useState<'bridge' | 'minibridge'>('bridge');
   const [staged, setStaged] = useState(false);
   const [eventDate, setEventDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' }));
   async function submit(ev: React.FormEvent<HTMLFormElement>) {
@@ -2025,6 +2030,7 @@ export function CreateDialog({
     try {
       const stage = {
           kind,
+          gameMode,
           pairMethod: kind === 'pairs' ? method : 'mp',
           trim: kind === 'pairs' && method !== 'mp' ? form.get('trim') : 'none',
           name: form.get('name'),
@@ -2053,6 +2059,8 @@ export function CreateDialog({
   return (
     <Modal title={competition ? '新增賽段' : '建立新賽事'} onClose={onClose}>
       <form onSubmit={submit}>
+        <label className="field">橋牌模式<select value={gameMode} onChange={e => setGameMode(e.target.value as 'bridge' | 'minibridge')}><option value="bridge">一般橋牌</option><option value="minibridge">MiniBridge 迷你橋牌</option></select></label>
+        {gameMode === 'minibridge' && <p>五種花色 × 一線／成局，共 10 種合約；無身價、不加倍。</p>}
         {!competition && <label className="stage-mode"><input type="checkbox" checked={staged} onChange={e => setStaged(e.target.checked)} /> 設立賽段</label>}
         {((!competition && staged) || (competition && !competition.hasStages)) && <label className="field">{competition ? '原有成績的賽段名稱' : '第一賽段名稱'}<input name="firstStageName" required maxLength={80} placeholder="例如：預賽" /></label>}
         {competition && <p>{competition.name} · {competition.date} · {competition.venue || '未填地點'}<br />此賽段使用獨立名單、賽制與成績。</p>}
@@ -2254,11 +2262,12 @@ function AdminPanel({
   useEffect(() => {
     const r = event?.results[resultKey(assignment, board)];
     setInput(
-      r
+      r && r.status !== 'cancelled' && r.status !== 'average'
         ? {
             assignmentId: r.assignmentId,
             board: r.board,
             level: r.level,
+            miniBridge: r.miniBridge,
             strain: r.strain,
             declarer: r.declarer,
             doubled: r.doubled,
@@ -2269,6 +2278,7 @@ function AdminPanel({
             assignmentId: assignment,
             board,
             level: 3,
+            miniBridge: event?.gameMode === 'minibridge',
             strain: 'NT',
             declarer: 'N',
             doubled: 1,
@@ -2592,6 +2602,7 @@ function AdminPanel({
                   ))}
                 </select>
               </label>
+              {event.gameMode === 'minibridge' ? <MiniContractFields value={input} onChange={setInput} /> : <>
               <label className="field">
                 線位
                 <select
@@ -2638,6 +2649,7 @@ function AdminPanel({
                   <option value={4}>XX</option>
                 </select>
               </label>
+              </>}
               <label className="field">
                 莊家
                 <select
@@ -2680,6 +2692,7 @@ function AdminPanel({
                     contractScore(
                       input,
                       event.boards.find((b) => b.number === board)?.vulnerability ?? 'None',
+                      event.gameMode === 'minibridge',
                     ),
                   )}
                 </strong>

@@ -73,6 +73,7 @@ export function DealExplorer({
   resultSelection = 0,
   onManualTrial,
   tableSelected = false,
+  miniBridge = false,
   navigation,
   averageScore = null,
   scoreSide = 'NS',
@@ -84,6 +85,7 @@ export function DealExplorer({
   resultSelection?: number;
   onManualTrial?: () => void;
   tableSelected?: boolean;
+  miniBridge?: boolean;
   navigation?: React.ReactNode;
   averageScore?: number | null;
   scoreSide?: string;
@@ -285,15 +287,15 @@ export function DealExplorer({
         >
           <div className="par-heading">
             <span className="corner-kicker">
-              {tableSelected ? 'TABLE RESULT' : 'PAR CONTRACT'}
+              {tableSelected ? 'TABLE RESULT' : miniBridge ? 'MINIBRIDGE' : 'PAR CONTRACT'}
             </span>
           </div>
-          {analysis || tableSelected ? (
+          {(!miniBridge && analysis) || tableSelected ? (
             <>
               <strong className="your-contract">
                 {contractParts ? <>
                   <span className={['♦', '♥'].includes(contractParts[2]) ? 'contract-bid red-suit' : 'contract-bid'}>
-                    {contractParts[1]}{contractParts[2]}{contractParts[3]}
+                    {result?.miniBridge ? `${contractParts[2]} ${result.level === 1 ? '一線' : '成局'}` : `${contractParts[1]}${contractParts[2]}${contractParts[3]}`}
                   </span>
                   <span className="contract-seat">{seatNames[contractParts[4] as Seat]}</span>
                 </> : <span>{displayedContract}</span>}
@@ -319,7 +321,7 @@ export function DealExplorer({
                 </button>
               )}
               <div id={scoreDetailId} popover="auto" className="player-detail-popover">
-                {analysis && <div>Par:
+                {!miniBridge && analysis && <div>Par:
                   {fullParContracts(analysis.par.contracts).map((contract, index) => (
                     <div key={index}>{contract}</div>
                   ))}
@@ -329,7 +331,7 @@ export function DealExplorer({
               </div>
             </>
           ) : (
-            <span>計算中…</span>
+            <span>{miniBridge ? '選擇桌次查看合約' : '計算中…'}</span>
           )}
         </section>
         <BoardInformation

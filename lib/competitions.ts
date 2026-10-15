@@ -7,7 +7,7 @@ export function competitionInfo(root: BridgeEvent): CompetitionInfo {
 }
 
 export function stageSummary(event: BridgeEvent) {
-  return { id: event.id, name: event.stageName ?? event.name, kind: event.kind, pairMethod: event.pairMethod ?? 'mp', status: event.status, participants: event.participants.length, rounds: event.rounds, boards: event.boards.length };
+  return { id: event.id, name: event.stageName ?? event.name, kind: event.kind, gameMode: event.gameMode ?? 'bridge', pairMethod: event.pairMethod ?? 'mp', status: event.status, participants: event.participants.length, rounds: event.rounds, boards: event.boards.length };
 }
 
 export function competitionCatalog(data: StoredEvent[]) {

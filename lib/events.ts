@@ -7,6 +7,7 @@ import {
   createSchema,
   Mutation,
   Result,
+  ResultInput,
   StoredEvent,
   resultKey,
   seats,
@@ -66,6 +67,7 @@ export function createEvent(
     prefix: data.prefix ?? '',
     ...(data.firstStageName ? { hasStages: true, stageName: data.firstStageName } : {}),
     kind: data.kind,
+    gameMode: data.gameMode ?? 'bridge',
     date: data.date,
     venue: data.venue,
     rounds: data.rounds,
@@ -77,7 +79,7 @@ export function createEvent(
     penalties: {},
     demo: false,
     participants,
-    boards: Array.from({ length: data.rounds * data.boardsPerRound }, (_, i) => makeBoard(i + 1)),
+    boards: Array.from({ length: data.rounds * data.boardsPerRound }, (_, i) => ({ ...makeBoard(i + 1), ...(data.gameMode === 'minibridge' ? { vulnerability: 'None' as const } : {}) })),
     assignments: [],
     results: {},
     audit: [],
@@ -136,6 +138,14 @@ export class DomainError extends Error {
     public status = 400,
   ) {
     super(message);
+  }
+}
+function scoredInput(r: ResultInput, event: BridgeEvent, board: Board) {
+  const miniBridge = event.gameMode === 'minibridge';
+  try {
+    return { ...r, miniBridge, nsScore: contractScore(r, board.vulnerability, miniBridge) };
+  } catch (error) {
+    throw new DomainError((error as Error).message);
   }
 }
 export function applyMutation(stored: StoredEvent, command: Mutation): StoredEvent {
@@ -237,7 +247,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       const b = e.boards.find(b => b.number === r.board)!;
       const key = resultKey(a.id, b.number);
       if (e.results[key]?.status === 'cancelled') throw new DomainError('取消的牌只能由裁判恢復', 403);
-      const after = { ...r, status: 'played' as const, nsScore: contractScore(r, b.vulnerability), updatedAt: at };
+      const after = { ...scoredInput(r, e, b), status: 'played' as const, updatedAt: at };
       changes.push({ key, before: e.results[key] ?? null, after });
       e.results[key] = after;
       detail = pair + ' 提交第 ' + command.round + ' 圈';
@@ -281,7 +291,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
         throw new DomainError('Cancelled 成績只能由裁判恢復。', 403);
       if (seen.has(key)) throw new DomainError('同一批資料包含重複成績。');
       seen.add(key);
-      const after = { ...r, nsScore: contractScore(r, b.vulnerability), updatedAt: at };
+      const after = { ...scoredInput(r, e, b), updatedAt: at };
       changes.push({ key, before: e.results[key] ?? null, after });
       e.results[key] = after;
     }
@@ -372,9 +382,9 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     if (!r || r.assignmentId !== a.id || r.board !== b.number)
       throw new DomainError('恢復成績需提供此桌完整合約');
     const after: Result = {
-      ...r,
+      ...(command.cancelled ? r : scoredInput(r, e, b)),
       status: command.cancelled ? 'cancelled' : 'played',
-      nsScore: contractScore(r, b.vulnerability),
+      nsScore: command.cancelled ? 0 : scoredInput(r, e, b).nsScore,
       updatedAt: at,
     };
     changes.push({ key, before: e.results[key] ?? null, after });
@@ -400,6 +410,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     while ([...explicitGroups].some((group) => group!.startsWith(`${prefix}-`))) prefix += '_';
     e.boards = boards.map((b) => ({
       ...b,
+      ...(e.gameMode === 'minibridge' ? { vulnerability: 'None' as const } : {}),
       group:
         b.group ??
         `${prefix}-${Math.floor(ordered.findIndex((item) => item.number === b.number) / e.boardsPerRound) + 1}`,

@@ -13,7 +13,7 @@ async function request<T>(url: string, body?: object, method = 'POST'): Promise<
   if (!r.ok) throw new Error(data.error ?? '讀取失敗');
   return data;
 }
-const format = (s: Competition['stages'][number]) => s.kind === 'teams' ? '隊制賽 · IMP / VP' : `雙人賽 · ${s.pairMethod === 'mp' ? 'MP' : s.pairMethod === 'butler' ? 'ButlerIMP' : 'CrossIMP'}`;
+const format = (s: Competition['stages'][number]) => (s.gameMode === 'minibridge' ? 'MiniBridge · ' : '') + (s.kind === 'teams' ? '隊制賽 · IMP / VP' : `雙人賽 · ${s.pairMethod === 'mp' ? 'MP' : s.pairMethod === 'butler' ? 'ButlerIMP' : 'CrossIMP'}`);
 
 export default function CompetitionHub({ competitionId }: { competitionId?: string }) {
   const [competitions, setCompetitions] = useState<Competition[]>([]);

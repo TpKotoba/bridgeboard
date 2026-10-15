@@ -27,7 +27,7 @@ export function clubView(event: BridgeEvent, pair: string) {
   const roles = assignment ? clubRoles(event, assignment) : null;
   const accepted = !!assignment && clubAccepted(event, assignment);
   return {
-    id: event.id, name: [event.prefix, event.name].filter(Boolean).join(' '), pair,
+    id: event.id, gameMode: event.gameMode ?? 'bridge', name: [event.prefix, event.name].filter(Boolean).join(' '), pair,
     pairName: event.participants.find(p => p.id === pair)?.name ?? pair,
     round, phase: event.roundPhase, status: event.status,
     locked: accepted,

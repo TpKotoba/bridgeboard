@@ -44,6 +44,7 @@ export const resultSchema = z
     declarer: z.enum(seats),
     tricks: z.number().int().min(0).max(13),
     lead: z.string().max(4).default(''),
+    miniBridge: z.boolean().optional(),
   })
   .strict()
   .refine(
@@ -82,6 +83,7 @@ export type BridgeEvent = {
   name: string;
   prefix?: string;
   kind: Kind;
+  gameMode?: 'bridge' | 'minibridge';
   date: string;
   venue: string;
   rounds: number;
@@ -114,6 +116,7 @@ export const createSchema = z
     name: z.string().trim().min(2).max(80),
     prefix: z.string().trim().max(80).optional(),
     kind: z.enum(['teams', 'pairs']),
+    gameMode: z.enum(['bridge', 'minibridge']).optional(),
     pairMethod: z.enum(['mp', 'crossimp', 'butler']).optional(),
     trim: z.enum(['none', 'one', 'ten-percent']).optional(),
     date: z
