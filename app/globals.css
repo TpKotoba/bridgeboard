@@ -3963,3 +3963,6 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.split-contract-editor { margin-block: 20px; }
+.split-contract-editor > summary { cursor: pointer; color: var(--ink); }
+.split-contract-editor fieldset { min-width: 0; margin-block: 12px; border: 1px solid #dbe2d8; border-radius: 8px; padding: 12px; }

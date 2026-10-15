@@ -246,6 +246,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       if (!r || r.assignmentId !== a.id || !a.boards.includes(r.board)) throw new DomainError('只能輸入本搭檔當圈成績', 403);
       const b = e.boards.find(b => b.number === r.board)!;
       const key = resultKey(a.id, b.number);
+      if (e.results[key]?.split) throw new DomainError('請先由裁判撤銷不平衡合約，再更正原始成績', 403);
       if (e.results[key]?.status === 'cancelled') throw new DomainError('取消的牌只能由裁判恢復', 403);
       const after = { ...scoredInput(r, e, b), status: 'played' as const, updatedAt: at };
       changes.push({ key, before: e.results[key] ?? null, after });
@@ -287,6 +288,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
         b = e.boards.find((b) => b.number === r.board);
       if (!a || !b || !a.boards.includes(r.board)) throw new DomainError('桌次與牌號不符合賽程。');
       const key = resultKey(a.id, b.number);
+      if (e.results[key]?.split) throw new DomainError('請先由裁判撤銷不平衡合約，再更正原始成績', 403);
       if (e.results[key]?.status === 'cancelled')
         throw new DomainError('Cancelled 成績只能由裁判恢復。', 403);
       if (seen.has(key)) throw new DomainError('同一批資料包含重複成績。');
@@ -361,12 +363,32 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     e.penalties ??= {};
     detail = `${command.participantId} Penalty: ${e.penalties[command.participantId] ?? 0} → ${command.amount}`;
     e.penalties[command.participantId] = command.amount;
+  } else if (command.action === 'split-contract') {
+    if (e.kind !== 'teams') throw new DomainError('不平衡合約僅限隊伍賽');
+    if (e.status === 'finished') throw new DomainError('請先重新開放賽事');
+    const a = e.assignments.find(a => a.id === command.assignmentId);
+    const b = e.boards.find(b => b.number === command.board);
+    if (!a || !b || !a.boards.includes(b.number)) throw new DomainError('桌次與牌號不符合賽程');
+    const key = resultKey(a.id, b.number);
+    const before = e.results[key];
+    if (!before || before.status === 'cancelled' || before.status === 'average') throw new DomainError('請先登記或恢復本桌實際合約');
+    const after: Result = { ...before, updatedAt: at };
+    if (command.contracts) {
+      for (const r of Object.values(command.contracts)) {
+        if (r.assignmentId !== a.id || r.board !== b.number) throw new DomainError('判罰合約的桌次與牌號不符');
+      }
+      after.split = { ns: scoredInput(command.contracts.ns, e, b), ew: scoredInput(command.contracts.ew, e, b) };
+    } else delete after.split;
+    e.results[key] = after;
+    changes.push({ key, before, after });
+    detail = `${key}: ${command.contracts ? 'NS／EW 分別指定合約' : '撤銷不平衡合約，恢復原始紀錄'}`;
   } else if (command.action === 'ruling') {
     if (e.status === 'finished') throw new DomainError('請先重新開放賽事');
     const a = e.assignments.find((a) => a.id === command.assignmentId);
     const b = e.boards.find((b) => b.number === command.board);
     if (!a || !b || !a.boards.includes(b.number)) throw new DomainError('桌次與牌號不符合賽程');
     const key = resultKey(a.id, b.number);
+    if (e.results[key]?.split) throw new DomainError('請先撤銷不平衡合約，再取消此副');
     const r = command.cancelled
       ? (e.results[key] ?? {
           assignmentId: a.id,
@@ -465,7 +487,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     }
   }
   if (e.status === 'live' && !e.club?.enabled &&
-      ['results', 'ruling', 'round-control'].includes(command.action)) {
+      ['results', 'ruling', 'split-contract', 'round-control'].includes(command.action)) {
     if (command.action === 'results') {
       const latest = roundProgress({ ...e, currentRound: 0 }).round;
       if (latest > (e.currentRound ?? 0)) {
@@ -499,6 +521,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       'round-control': '設定目前圈數',
       'round-timing': '設定圈次時間',
       ruling: '裁判取消／恢復',
+      'split-contract': '不平衡合約',
       penalty: '裁判 Penalty',
     }[command.action],
     reason: command.reason,

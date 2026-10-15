@@ -53,6 +53,7 @@ export const resultSchema = z
   );
 export type ResultInput = z.infer<typeof resultSchema>;
 export type Result = ResultInput & {
+  split?: { ns: ResultInput & { nsScore: number }; ew: ResultInput & { nsScore: number } };
   nsScore: number;
   updatedAt: string;
   status?: 'played' | 'cancelled' | 'average';
@@ -180,6 +181,15 @@ export const mutationSchema = z.discriminatedUnion('action', [
     .strict(),
   z
     .object({
+      action: z.literal('split-contract'),
+      revision: z.number().int().min(1),
+      requestId: z.string().uuid(),
+      reason: z.string().trim().min(2).max(200),
+      assignmentId: z.string().min(1).max(100),
+      board: z.number().int().min(1).max(128),
+      contracts: z.object({ ns: resultSchema, ew: resultSchema }).strict().nullable(),
+    }).strict(),
+  z.object({
       action: z.literal('ruling'),
       revision: z.number().int().min(1),
       requestId: z.string().uuid(),
@@ -265,6 +275,9 @@ export type MatchScore = {
   b: string;
   impsA: number;
   impsB: number;
+  marginA: number;
+  marginB: number;
+  split: boolean;
   completed: number;
   total: number;
   vpA: number | null;

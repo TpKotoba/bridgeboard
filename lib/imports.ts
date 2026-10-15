@@ -46,6 +46,7 @@ export function parseCsv(text: string): Record<string, string>[] {
 }
 export function parseResultsCsv(text: string): ResultInput[] {
   return parseCsv(text).map((r, i) => {
+    if (r.splitNS || r.splitEW) throw new Error(`第 ${i + 2} 列：不平衡合約請由裁判重新套用，不能用一般收分匯入`);
     if (r.status && r.status !== 'played')
       throw new Error(`第 ${i + 2} 列：Cancelled 請由裁判在後台裁定，不能用一般 CSV 收分匯入`);
     for (const key of ['assignmentId', 'board', 'level', 'strain', 'doubled', 'declarer', 'tricks'])
@@ -73,8 +74,9 @@ function csvCell(s: unknown) {
     : `"${v.replaceAll('"', '""')}"`;
 }
 export function exportResultsCsv(e: BridgeEvent) {
+  const hasSplit = Object.values(e.results).some(r => r.split);
   return (
-    resultsCsvHeader +
+    resultsCsvHeader + (hasSplit ? ',splitNS,splitEW' : '') +
     '\n' +
     Object.values(e.results)
       .map((r) =>
@@ -88,6 +90,7 @@ export function exportResultsCsv(e: BridgeEvent) {
           r.tricks,
           r.lead,
           r.status ?? 'played',
+          ...(hasSplit ? [r.split ? JSON.stringify(r.split.ns) : '', r.split ? JSON.stringify(r.split.ew) : ''] : []),
         ]
           .map(csvCell)
           .join(','),

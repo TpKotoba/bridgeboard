@@ -29,7 +29,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     )
       throw new DomainError('修改賽事名稱與前綴僅限裁判', 403);
     if (
-      ['pbn', 'movement', 'board-publication', 'round-control', 'round-timing', 'competition-settings', 'team-roster'].includes(
+      ['split-contract', 'pbn', 'movement', 'board-publication', 'round-control', 'round-timing', 'competition-settings', 'team-roster'].includes(
         command.action,
       ) &&
       !(await isDirector())

@@ -1,5 +1,6 @@
 'use client';
 import { Breadcrumbs } from './breadcrumbs';
+import { SplitContractEditor } from './split-contract-editor';
 import { MiniContractFields } from './mini-contract-fields';
 import { participantNumber } from '@/lib/participant-number';
 import { EventCalendar } from './event-calendar';
@@ -50,7 +51,7 @@ import { resultKey } from '@/lib/model';
 import { BoardInformation, DealExplorer } from './deal-explorer';
 import { tableNames } from '@/lib/table-names';
 import { boardRounds as getBoardRounds } from '@/lib/board-navigation';
-import { contractScore, imps, teamStandingsThroughRound, vp } from '@/lib/scoring';
+import { awardedResult, teamBoardImps, contractScore, imps, teamStandingsThroughRound, vp } from '@/lib/scoring';
 import {
   exportMovement,
   exportPbn,
@@ -157,7 +158,7 @@ function Contract({ result }: { result?: Result }) {
     <span className={`contract ${result.strain === 'H' || result.strain === 'D' ? 'red' : ''}`}>
       {displayContract(result)}{' '}
       <small>
-        {result.level ? seatNames[result.declarer] : ''} {resultText(result)}
+        {result.level ? seatNames[result.declarer] : ''} {resultText(result)}{result.split && ' · 判'}
       </small>
     </span>
   ) : (
@@ -454,21 +455,22 @@ export default function Scoreboard() {
       ? null
       : openResult.status === 'average' || closedResult.status === 'average'
         ? 0
-        : imps(openResult.nsScore - closedResult.nsScore) * (a.ns === playerId ? 1 : -1);
+        : teamBoardImps(openResult, closedResult)[a.ns === playerId ? 0 : 1];
     const scores = (event?.assignments ?? []).filter(other => other.boards.includes(b))
       .map(other => event?.results[resultKey(other.id, b)])
       .filter(result => result && result.status !== 'cancelled' && result.status !== 'average')
       .map(result => result!.nsScore);
     const mean = scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null;
     const datum = mean === null ? null : Math.sign(mean) * Math.round(Math.abs(mean) / 10) * 10;
-    const butlers = [a, closed].map(assignment => {
+    const calculateButlers = (opponent = false) => [a, closed].map(assignment => {
       const result = assignment ? event?.results[resultKey(assignment.id, b)] : undefined;
       return result && assignment && result.status !== 'cancelled' && result.status !== 'average' && datum !== null
-        ? imps(result.nsScore - datum) * (assignment.ns === playerId ? 1 : -1) : null;
+        ? imps(awardedResult(result, (assignment.ns === playerId) !== opponent ? 'ns' : 'ew')!.nsScore - datum) * ((assignment.ns === playerId) !== opponent ? 1 : -1) : null;
     });
-    return { a, b, closed, impDiff, butlers };
+    return { a, b, closed, impDiff, butlers: calculateButlers(), opponentButlers: calculateButlers(true) };
   });
   const playerButlers = teamPlayerRows.flatMap(row => row.butlers).filter((value): value is number => value !== null);
+  const opponentButlerTotal = teamPlayerRows.flatMap(row => row.opponentButlers).reduce<number>((sum, value) => sum + (value ?? 0), 0);
   const playerButlerTotal = playerButlers.reduce((sum, value) => sum + value, 0);
   const cumulativePlayerStandings = event?.kind === 'teams' ? teamStandingsThroughRound(event, playerRound) : [];
   const playerImpTotal = teamPlayerRows.reduce((total, row) => total + (row.impDiff ?? 0), 0);
@@ -1098,7 +1100,7 @@ export default function Scoreboard() {
                                       <strong>{name(id)}</strong>
                                       <small>{participantNumber(id, event.kind)} / {number(standing?.score ?? null)} VP{standing && ` / #${standing.rank}`}</small>
                                     </button>
-                                    <b>{index === 0 ? m.impsA : m.impsB}</b>
+                                    <b>{m.split ? `${signed(index === 0 ? m.marginA : m.marginB)} IMP 淨差` : index === 0 ? m.impsA : m.impsB}</b>
                                   </div>
                                 );
                               })}
@@ -1222,6 +1224,7 @@ export default function Scoreboard() {
                   {tab === 'boards' && selectedBoard && (
                     <>
                       <div className="board-layout">
+                        {activeResult?.split && <section className="panel"><div className="panel-heading"><h3>不平衡合約</h3><p className="footnote">下方牌局保留原始紀錄；判罰後各方分別依下列合約計分。</p>{(['ns','ew'] as const).map(side => <p key={side}>{side.toUpperCase()} 獲判：<Contract result={awardedResult(activeResult, side)} /> · <span className="mono">{signed(awardedResult(activeResult, side)!.nsScore * (side === 'ns' ? 1 : -1))}</span></p>)}</div></section>}
                         <section className="panel deal-panel">
                           {hasDeal(selectedBoard) && selectedBoard.deal.N.length === 13 ? (
                             <DealExplorer
@@ -1312,8 +1315,8 @@ export default function Scoreboard() {
                                           event.results[resultKey(a.id, selectedBoard.number)],
                                         y =
                                           event.results[resultKey(closed.id, selectedBoard.number)];
-                                      const own = awayPerspective ? y : x;
-                                      const opponent = awayPerspective ? x : y;
+                                      const own = awardedResult(awayPerspective ? y : x, 'ns');
+                                      const opponent = awardedResult(awayPerspective ? x : y, 'ew');
                                       const ownTable = awayPerspective ? closed : a;
                                       const opponentTable = awayPerspective ? a : closed;
                                       return (
@@ -1378,7 +1381,7 @@ export default function Scoreboard() {
                                             {x?.status === 'cancelled' || y?.status === 'cancelled'
                                               ? '取消'
                                               : x && y
-                                                ? signed(x.status === 'average' || y.status === 'average' ? 0 : imps((x.nsScore - y.nsScore) * (awayPerspective ? -1 : 1)))
+                                                ? signed(x.status === 'average' || y.status === 'average' ? 0 : teamBoardImps(x, y)[awayPerspective ? 1 : 0])
                                                 : '—'}
                                           </td>
                                         </tr>
@@ -1594,12 +1597,13 @@ export default function Scoreboard() {
                               return <tr key={`${a.matchId}-${b}`}>
                                 <td><button className="text-button" onClick={() => openBoard(a)}>{displayBoardNumber(b)}</button></td>
                                 {[a, closed].map((assignment, index) => {
-                                  const result = assignment ? event.results[resultKey(assignment.id, b)] : undefined;
+                                  const result = assignment ? awardedResult(event.results[resultKey(assignment.id, b)], assignment.ns === playerId ? 'ns' : 'ew') : undefined;
                                   const ownScore = result && assignment ? result.nsScore * (assignment.ns === playerId ? 1 : -1) : null;
                                   const butler = butlers[index];
                                   return <td key={index}>
                                     <button className="contract-link" aria-label={`查看牌號 ${displayBoardNumber(b)} ${index === 0 ? '公開' : '關閉'}室成績`} onClick={() => openBoard(assignment)}>
                                       <Contract result={result} />
+
                                       <small className="block mono team-raw-score">{result?.status === 'average' ? '平均分' : result?.status === 'cancelled' || ownScore === null ? '—' : signed(ownScore)}
                                         {butler !== null && <span className="muted butler-imp" title="Butler IMP（我方視角）" aria-label={`Butler IMP ${signed(butler)}`}>({signed(butler)})</span>}
                                       </small>
@@ -1613,8 +1617,8 @@ export default function Scoreboard() {
                           <tfoot><tr>
                             <td colSpan={4}>
                               <div className="team-match-summary" aria-label="本圈比數，我方在左、對手在右">
-                                <span className="muted">IMP 合計</span>
-                                <button type="button" className="contract-link mono" aria-label="查看本圈雙方 Butler IMP" popoverTarget="player-butler-summary" onClick={e => positionDetail(e.currentTarget)}>{teamPlayerRows.some(row => row.impDiff !== null) ? `${playerImpFor} : ${playerImpAgainst}` : '— : —'}</button>
+                                <span className="muted">{playerMatchScore?.split ? 'IMP 淨差' : 'IMP 合計'}</span>
+                                <button type="button" className="contract-link mono" aria-label="查看本圈雙方 Butler IMP" popoverTarget="player-butler-summary" onClick={e => positionDetail(e.currentTarget)}>{teamPlayerRows.some(row => row.impDiff !== null) ? playerMatchScore?.split ? `${signed(playerMatchScore.a === playerId ? playerMatchScore.marginA : playerMatchScore.marginB)} : ${signed(playerMatchScore.a === playerId ? playerMatchScore.marginB : playerMatchScore.marginA)}` : `${playerImpFor} : ${playerImpAgainst}` : '— : —'}</button>
                               <button type="button" className="contract-link" popoverTarget="player-vp-scale" onClick={e => positionDetail(e.currentTarget)}>換算 VP</button>
                                 <button type="button" className="contract-link mono" aria-label="查看雙方累積 VP" popoverTarget="player-cumulative-vp" onClick={e => positionDetail(e.currentTarget)}>{number(playerMatchVp)} : {number(opponentMatchVp)}</button>
                               </div>
@@ -1628,7 +1632,7 @@ export default function Scoreboard() {
                               <div key={`${playerId}-${playerRound}-butler`} id="player-butler-summary" popover="auto" className="player-detail-popover">
                                 <strong>第 {playerRound} 圈 · Butler IMP 合計</strong>
                                 <div>我方 · {name(playerId!)}：<span className="butler-total">{playerButlers.length ? signed(playerButlerTotal) : '—'}</span></div>
-                                <div>對手 · {playerMatch ? name(playerMatch.ns === playerId ? playerMatch.ew : playerMatch.ns) : '—'}：<span className="butler-total">{playerButlers.length ? signed(-playerButlerTotal) : '—'}</span></div>
+                                <div>對手 · {playerMatch ? name(playerMatch.ns === playerId ? playerMatch.ew : playerMatch.ns) : '—'}：<span className="butler-total">{playerButlers.length ? signed(opponentButlerTotal) : '—'}</span></div>
                                 <small className="muted">加總本圈兩室已收的有效成績；取消與平均分不計入。</small>
                               </div>
                               <div key={`${playerId}-${playerRound}-${playerVpBoards}`} id="player-vp-scale" popover="auto" className="player-detail-popover vp-scale-popover">
@@ -2518,6 +2522,7 @@ function AdminPanel({
           </div>
         )}
         {section === 'score' && (
+          <>
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -2729,7 +2734,7 @@ function AdminPanel({
             <div className="button-row score-actions">
             <button
               className="button score-save"
-              disabled={busy || event.status === 'finished' || existing?.status === 'cancelled'}
+              disabled={busy || event.status === 'finished' || !!existing?.split || existing?.status === 'cancelled'}
             >
               <Check size={16} />
               {busy ? '儲存中…' : existing ? '儲存更正並重算' : '提交成績'}
@@ -2737,7 +2742,7 @@ function AdminPanel({
               <button
                 type="button"
                 className={existing?.status === 'cancelled' ? 'button subtle' : 'button danger'}
-                disabled={busy || event.status === 'finished' || reason.trim().length < 2}
+                disabled={busy || event.status === 'finished' || !!existing?.split || reason.trim().length < 2}
                 onClick={() =>
                   save({
                     action: 'ruling',
@@ -2758,6 +2763,13 @@ function AdminPanel({
               <p className="footnote">賽事已結束；更正前請至發布設定重新開放。</p>
             )}
           </form>
+            {event.canDirect && event.kind === 'teams' && existing && existing.status !== 'cancelled' && existing.status !== 'average' && selected && <SplitContractEditor
+              key={assignment + ':' + board + ':' + event.revision} result={existing}
+              names={{ ns: name(selected.ns), ew: name(selected.ew) }}
+              vulnerability={event.boards.find(b => b.number === board)?.vulnerability ?? 'None'}
+              miniBridge={event.gameMode === 'minibridge'} disabled={busy || event.status === 'finished'} save={save}
+            />}
+          </>
         )}
         {section === 'import' && event.canDirect && (
           <>
@@ -3176,6 +3188,7 @@ function AdminPanel({
                       {a.changes.map((c) => (
                         <p className="mono" key={c.key}>
                           {c.key}：
+                          {(c.before?.split || c.after?.split) && <span className="block">不平衡合約：{[c.before, c.after].map(r => r?.split ? (['ns', 'ew'] as const).map(side => { const awarded = awardedResult(r, side)!; return `${side.toUpperCase()} ${displayContract(awarded)} ${awarded.declarer} ${resultText(awarded)}（NS 座標 ${signed(awarded.nsScore)}）`; }).join('；') : '無判罰').join(' → ')}</span>}
                           {c.before
                             ? c.before.status === 'cancelled'
                               ? 'Cancelled'

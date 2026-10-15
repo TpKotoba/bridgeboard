@@ -2,11 +2,22 @@ import {
   BridgeEvent,
   Projection,
   ResultInput,
+  Result,
   Standing,
   Vulnerability,
   Trim,
   resultKey,
 } from './model';
+// Assigned scores remain in NS coordinates; the side selects the awarded contract.
+export function awardedResult(result: Result | undefined, side: 'ns' | 'ew'): Result | undefined {
+  return result?.split && result.status !== 'cancelled' && result.status !== 'average'
+    ? { ...result, ...result.split[side] } : result;
+}
+export function teamBoardImps(open: Result, closed: Result): [number, number] {
+  if (open.status === 'cancelled' || closed.status === 'cancelled' || open.status === 'average' || closed.status === 'average') return [0, 0];
+  return [imps(awardedResult(open, 'ns')!.nsScore - awardedResult(closed, 'ew')!.nsScore),
+    imps(awardedResult(closed, 'ns')!.nsScore - awardedResult(open, 'ew')!.nsScore)];
+}
 export function trimScores(values: number[], trim: Trim = 'none') {
   const ordered = [...values].sort((a, b) => a - b);
   const n =
@@ -149,6 +160,9 @@ export function project(e: BridgeEvent): Projection {
         b: open.ew,
         impsA: 0,
         impsB: 0,
+        marginA: 0,
+        marginB: 0,
+        split: false,
         completed: 0,
         total: open.boards.length,
         vpA: null as number | null,
@@ -169,19 +183,22 @@ export function project(e: BridgeEvent): Projection {
           match.completed++;
           continue;
         }
-        const imp = imps(x.nsScore - y.nsScore);
+        const [imp, otherImp] = teamBoardImps(x, y);
+        match.marginA += imp;
+        match.marginB += otherImp;
+        match.split ||= !!(x.split || y.split);
         match.impsA += Math.max(0, imp);
-        match.impsB += Math.max(0, -imp);
+        match.impsB += Math.max(0, otherImp);
         match.completed++;
       }
       for (const id of [match.a, match.b]) byId[id].played += match.completed;
       if (match.completed === match.total && cancelled < match.total) {
-        match.vpA = vp(match.impsA - match.impsB, match.total);
-        match.vpB = vp(match.impsB - match.impsA, match.total);
+        match.vpA = vp(match.marginA, match.total);
+        match.vpB = vp(match.marginB, match.total);
         byId[match.a].score! += match.vpA;
         byId[match.b].score! += match.vpB;
-        byId[match.a].secondary += match.impsA - match.impsB;
-        byId[match.b].secondary += match.impsB - match.impsA;
+        byId[match.a].secondary += match.marginA;
+        byId[match.b].secondary += match.marginB;
       }
       projection.matches.push(match);
     }

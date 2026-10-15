@@ -1,7 +1,8 @@
 'use client';
 import { Breadcrumbs } from './breadcrumbs';
 import { SessionControl } from './session-control';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { listenForOutsideDismiss } from '@/lib/outside-dismiss';
 import { EventCalendar } from './event-calendar';
 import { ArrowLeft, ArrowRight, CalendarDays, Eye, EyeOff, MapPin, Plus, Trophy, Users } from 'lucide-react';
 import { CreateDialog, Modal } from './scoreboard';
@@ -25,6 +26,11 @@ export default function CompetitionHub({ competitionId }: { competitionId?: stri
   const [loginError, setLoginError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [sessionExpanded, setSessionExpanded] = useState(false);
+  const account = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!sessionExpanded || !account.current) return;
+    return listenForOutsideDismiss(account.current, () => setSessionExpanded(false));
+  }, [sessionExpanded]);
   const [creating, setCreating] = useState(false);
   const [addingStage, setAddingStage] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -51,7 +57,7 @@ export default function CompetitionHub({ competitionId }: { competitionId?: stri
     </aside>
     <div className="main-shell">
       <header className="topbar"><Breadcrumbs items={[{ label: competition?.name ?? (competitionId ? '賽事主頁' : '瀏覽賽事') }]} />
-        {session.admin ? <div className="hub-account" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setSessionExpanded(false); }} onKeyDown={e => { if (e.key === 'Escape') setSessionExpanded(false); }}>
+        {session.admin ? <div ref={account} className="hub-account" onKeyDown={e => { if (e.key === 'Escape') setSessionExpanded(false); }}>
           <SessionControl director={session.director} menuLabel={!competitionId && session.director ? '刪除比賽' : '功能表'} onMenu={() => {
             if (!competitionId && session.director) { setDeleting(true); setNotice(''); }
             else setSessionExpanded(!sessionExpanded);

@@ -8,7 +8,7 @@ test('round VP and ranks exclude later and incomplete matches', () => {
     penalties: { a: 0.2 },
     projection: { standings: [], pairScores: {}, received: 0, expected: 0, matches:
       [ [1, 8, 12], [2, 20, 0], [3, null, null] ].map(([round, vpA, vpB]) => ({
-        id: String(round), round: round!, a: 'a', b: 'b', impsA: 0, impsB: 0, completed: 0, total: 8, vpA, vpB,
+        id: String(round), round: round!, a: 'a', b: 'b', impsA: 0, impsB: 0, marginA: 0, marginB: 0, split: false, completed: 0, total: 8, vpA, vpB,
       })),
     },
   };

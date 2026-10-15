@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { listenForOutsideDismiss } from '@/lib/outside-dismiss';
 
 export function SessionControl({ director, onMenu, onLogout, menuLabel = '功能表' }: {
   director: boolean;
@@ -11,9 +12,13 @@ export function SessionControl({ director, onMenu, onLogout, menuLabel = '功能
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => { if (expanded) menuButton.current?.focus(); }, [expanded]);
-  return <div className={`identity-control ${expanded ? 'expanded' : ''}`}
-    onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setExpanded(false); }}
+  const control = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!expanded || !control.current) return;
+    menuButton.current?.focus({ preventScroll: true });
+    return listenForOutsideDismiss(control.current, () => setExpanded(false));
+  }, [expanded]);
+  return <div ref={control} className={`identity-control ${expanded ? 'expanded' : ''}`}
     onKeyDown={e => { if (e.key === 'Escape') setExpanded(false); }}>
     {!expanded && <button type="button" className="identity-role" aria-label={`登入身分：${director ? '裁判' : '賽務'}`} aria-expanded={false} onClick={() => setExpanded(true)}>登入身分：{director ? '裁判' : '賽務'}</button>}
     {expanded && <>
