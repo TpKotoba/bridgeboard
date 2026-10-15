@@ -30,7 +30,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const id = (await params).id;
     const body = await readJson(request);
     const stored = await getEvent(id);
-    if (body?.confirmName !== stored.event.name)
+    if (body?.confirmStageName !== undefined
+      ? body.confirmStageName !== (stored.event.stageName ?? stored.event.name)
+      : body?.confirmName !== stored.event.name)
       throw new DomainError('請輸入完整賽事名稱以確認刪除');
     if (body?.revision !== stored.event.revision)
       throw new DomainError('賽事已更新，請重新載入後再刪除', 409);

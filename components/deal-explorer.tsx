@@ -3,9 +3,10 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Undo2, X } from 'lucide-react';
 import type { Board, Result, Seat } from '@/lib/model';
 import { seats } from '@/lib/model';
-import { fullParContracts, highestParContract, highCardPoints, lawOfTotalTricks } from '@/lib/deal-analysis';
+import { fullParContracts, highestParContract, perspectiveHighCardPoints, lawOfTotalTricks } from '@/lib/deal-analysis';
 import {
   initialPlay,
+  visibleHandSeats,
   bestDeclarerTricks,
   playFromResult,
   legalCards,
@@ -92,6 +93,7 @@ export function DealExplorer({
   validResults?: number;
 }) {
   const scoreDetailId = useId();
+  const [perspective, setPerspective] = useState<Seat | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [selection, setSelection] = useState('');
   const [history, setHistory] = useState<PlayState[]>([]);
@@ -235,9 +237,6 @@ export function DealExplorer({
         if (future.equals[i] & (1 << rank))
           values[strains[future.suit[i]] + ranks[rank - 2]] = score;
     }
-  const points = Object.fromEntries(
-    seats.map((seat) => [seat, highCardPoints(board.deal[seat])]),
-  ) as Record<Seat, number>;
   const lott = analysis ? lawOfTotalTricks(board, analysis.tricks) : null;
   const turn = state ? nextSeat(state) : undefined;
   const finished = state ? state.ns + state.ew === 13 : false;
@@ -269,10 +268,12 @@ export function DealExplorer({
     : analysis?.par.score;
   const shownScore = nsScore === undefined ? undefined : nsScore * (scoreSide === "EW" ? -1 : 1);
   // Keep all four cards visible until the next trick starts, including the final trick.
-  const displayedTrick = state?.trick.length ? state.trick : (state?.lastTrick ?? []);
+  const displayedTrick = perspective ? (state?.trick ?? []) : state?.trick.length ? state.trick : (state?.lastTrick ?? []);
+  const visibleHands = visibleHandSeats(perspective, declarer, state);
+  const points = Object.fromEntries(seats.map(seat => [seat, perspectiveHighCardPoints(board.deal[seat], state?.hands[seat], visibleHands.includes(seat))])) as Record<Seat, number | null>;
   const rack =
     state && turn
-      ? [...state.hands[turn]].sort(
+      ? [...board.deal[turn]].sort(
           (a, b) =>
             'SHCD'.indexOf(a[0]) - 'SHCD'.indexOf(b[0]) ||
             ranks.indexOf(b[1]) - ranks.indexOf(a[1]),
@@ -355,13 +356,18 @@ export function DealExplorer({
                   : ''
               }
             >
+              <button type="button" className="hand-perspective-button" aria-label={perspective === seat ? `離開${seatNames[seat]}家視角，顯示四家明牌` : `切換至${seatNames[seat]}家視角`} aria-pressed={perspective === seat} onClick={() => setPerspective(current => current === seat ? null : seat)}>
               <b>{seat}</b>
               <span className="hand-player-name" title={playerNames[seat]}>
                 {playerNames[seat] || `${seatNames[seat]}家`}
               </span>
+              </button>
             </header>
+            <div className="hand-content">
+            {!visibleHands.includes(seat) && <div className="hidden-hand">手牌隱藏</div>}
+            <div style={{ visibility: visibleHands.includes(seat) ? undefined : 'hidden' }} aria-hidden={!visibleHands.includes(seat)} inert={!visibleHands.includes(seat)}>
             {strains.slice(0, 4).map((suit) => {
-              const cards = board.deal[seat]
+              const cards = (perspective && state ? state.hands[seat] : board.deal[seat])
                 .filter((card) => card[0] === suit)
                 .sort((a, b) => ranks.indexOf(b[1]) - ranks.indexOf(a[1]));
               return (
@@ -385,7 +391,7 @@ export function DealExplorer({
                               className={`hand-card ${validLead && seat === leader && card === lead ? 'opening-lead' : ''}`}
                             >
                               {card[1]}
-                              {seat === turn && !finished && values[card] !== undefined && (
+                              {!perspective && seat === turn && !finished && values[card] !== undefined && (
                                 <sub
                                   className={`card-dd-value ${values[card] === best ? 'dd-best' : 'dd-inferior'}`}
                                   aria-label={`莊家最終 ${values[card]} 墩，${values[card] === best ? '最佳' : '非最佳'}出牌`}
@@ -401,6 +407,8 @@ export function DealExplorer({
                 </div>
               );
             })}
+            </div>
+            </div>
           </section>
         ))}
         <div className="compass-center" role="group" aria-label="本墩出牌">
@@ -428,10 +436,14 @@ export function DealExplorer({
             <span>Vul: {board.vulnerability}</span>
           </div>
           <div className="hcp-compass">
-            <span>{points.N}</span>
-            <span>{points.W}</span>
-            <span>{points.E}</span>
-            <span>{points.S}</span>
+            {(['N', 'W', 'E', 'S'] as Seat[]).map(seat => {
+              const hidden = !visibleHands.includes(seat);
+              return <span key={seat} className={hidden ? 'hcp-partial' : undefined}
+                title={hidden ? '已出牌累計大牌點（至少）' : '完整大牌點'}
+                aria-label={`${seatNames[seat]}家${hidden ? '已出牌累計大牌點，至少' : '完整大牌點'}：${points[seat] ?? 0}`}>
+                {hidden ? <span className="hcp-partial-value">{points[seat] ?? 0}<sup aria-hidden="true">?</sup></span> : points[seat] ?? '—'}
+              </span>;
+            })}
           </div>
         </section>
         <section className="analysis-corner dd-corner" aria-label="Double dummy 最佳墩數">
@@ -511,17 +523,17 @@ export function DealExplorer({
           {!finished && (
             <div
               className="play-rack"
-              aria-label={`${turn} ${playerNames[turn!] || ''} 的剩餘手牌`}
+              aria-label={`${turn} ${playerNames[turn!] || ''} 的出牌鍵盤，灰色代表已出牌`}
             >
               {rack.map((card) => (
                 <button
                   key={`${turn}-${card}`}
                   type="button"
                   className={
-                    card[0] === 'H' || card[0] === 'D' ? 'rack-card red-suit' : 'rack-card'
+                    `rack-card${card[0] === 'H' || card[0] === 'D' ? ' red-suit' : ''}${!state.hands[turn!].includes(card) ? ' played-card' : ''}`
                   }
                   disabled={busy || !future || !playable.has(card)}
-                  aria-label={`${turn} ${card}`}
+                  aria-label={`${turn} ${card}${!state.hands[turn!].includes(card) ? '，已出牌' : ''}`}
                   onClick={() => playFromHand(turn, card)}
                 >
                   <span>{symbols[card[0]]}</span>
@@ -532,7 +544,7 @@ export function DealExplorer({
           )}
         </div>
       )}
-      {busy && (
+      {busy && !perspective && (
         <p role="status" className="analysis-status">
           正在計算雙夢家…
         </p>

@@ -5,6 +5,7 @@ import { DomainError } from './events';
 export const deletionSchema = z.object({
   competitions: z.array(z.object({
     id: z.string().min(1).max(100),
+    confirmName: z.string().min(1).max(80),
     stages: z.array(z.object({ id: z.string().min(1).max(100), revision: z.number().int().positive() }).strict()).min(1).max(32),
   }).strict()).min(1).max(50),
 }).strict();
@@ -16,6 +17,7 @@ export function deletionTargets(data: StoredEvent[], input: CompetitionDeletion)
   return input.competitions.flatMap(c => {
     const root = data.find(s => s.event.id === c.id);
     if (!root || root.event.parentEventId) throw new DomainError('賽事已變更，請重新載入清單', 409);
+    if (c.confirmName !== root.event.name) throw new DomainError('請輸入完整比賽名稱以確認刪除');
     const family = data.filter(s => s.event.id === c.id || s.event.parentEventId === c.id);
     if (new Set(c.stages.map(s => s.id)).size !== c.stages.length || family.length !== c.stages.length ||
       family.some(s => !c.stages.some(expected => expected.id === s.event.id && expected.revision === s.event.revision))) {

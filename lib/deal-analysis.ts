@@ -37,6 +37,13 @@ export function fullParContracts(contracts: string[]): string[] {
     : ['Pass out'];
 }
 
+export function perspectiveHighCardPoints(cards: string[], remaining: string[] | undefined, visible: boolean) {
+  if (visible) return highCardPoints(cards);
+  if (!remaining || remaining.length === cards.length) return null;
+  const held = new Set(remaining);
+  return highCardPoints(cards.filter(card => !held.has(card)));
+}
+
 export function highCardPoints(cards: string[]) {
   return cards.reduce((sum, card) => sum + ({ A: 4, K: 3, Q: 2, J: 1 }[card[1]] ?? 0), 0);
 }

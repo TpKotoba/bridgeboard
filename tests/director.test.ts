@@ -58,7 +58,7 @@ test('maximum displayed board number persists without modifying board IDs or res
   assert.equal(s.stored.event.maxBoardNumber, 16);
   assert.deepEqual(s.stored.event.boards, before);
   assert.deepEqual(s.stored.event.results, {});
-  assert.equal(mutationSchema.safeParse({ action: 'settings', status: 'live', maxBoardNumber: 0, revision: 1, requestId: '00000000-0000-4000-8000-000000000001', reason: 'test' }).success, false);
+  assert.equal(mutationSchema.safeParse({ action: 'settings', status: 'live', maxBoardNumber: -1, revision: 1, requestId: '00000000-0000-4000-8000-000000000001', reason: 'test' }).success, false);
 });
 test('imported results imply a progress round when no round has been selected', () => {
   const s = setup();

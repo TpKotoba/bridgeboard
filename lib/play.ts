@@ -15,6 +15,12 @@ export type PlayState = {
   ns: number;
   ew: number;
 };
+export function visibleHandSeats(perspective: Seat | null, declarer: Seat, state?: PlayState): Seat[] {
+  if (!perspective) return [...seats];
+  const led = !!state && (state.trick.length > 0 || state.ns + state.ew > 0);
+  const dummy = seats[(seats.indexOf(declarer) + 2) % 4];
+  return led && dummy !== perspective ? [perspective, dummy] : [perspective];
+}
 export function rewindToCard(history: PlayState[], seat: Seat, card: string) {
   for (let i = history.length - 2; i >= 0; i--) {
     if (history[i].hands[seat].includes(card) && !history[i + 1].hands[seat].includes(card))

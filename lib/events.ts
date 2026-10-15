@@ -67,6 +67,7 @@ export function createEvent(
     prefix: data.prefix ?? '',
     ...(data.firstStageName ? { hasStages: true, stageName: data.firstStageName } : {}),
     kind: data.kind,
+    maxBoardNumber: data.kind === 'pairs' ? 0 : 32,
     gameMode: data.gameMode ?? 'bridge',
     date: data.date,
     venue: data.venue,

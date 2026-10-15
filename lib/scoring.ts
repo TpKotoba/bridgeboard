@@ -131,7 +131,16 @@ export function vp(margin: number, boards: number): number {
   const win = table[Math.min(Math.abs(margin), table.length - 1)] / 100;
   return margin >= 0 ? win : Math.round((20 - win) * 100) / 100;
 }
-export function project(e: BridgeEvent): Projection {
+type ProjectionInput = Pick<BridgeEvent, 'kind' | 'participants' | 'assignments' | 'results' | 'pairMethod' | 'trim' | 'penalties'> & { boards: { number: number }[] };
+
+export function pairStandingsBeforeRound(event: ProjectionInput, round: number): Standing[] {
+  const assignments = event.assignments.filter(a => a.round < round);
+  const ids = new Set(assignments.map(a => a.id));
+  const results = Object.fromEntries(Object.entries(event.results).filter(([, r]) => ids.has(r.assignmentId)));
+  return project({ ...event, assignments, results }).standings;
+}
+
+export function project(e: ProjectionInput): Projection {
   const standing: Standing[] = e.participants.map((p) => ({
     ...p,
     rank: 0,

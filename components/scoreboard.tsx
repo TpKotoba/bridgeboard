@@ -50,8 +50,8 @@ import type {
 import { resultKey } from '@/lib/model';
 import { BoardInformation, DealExplorer } from './deal-explorer';
 import { tableNames } from '@/lib/table-names';
-import { boardRounds as getBoardRounds } from '@/lib/board-navigation';
-import { awardedResult, teamBoardImps, contractScore, imps, teamStandingsThroughRound, vp } from '@/lib/scoring';
+import { displayedBoardNumber, boardRounds as getBoardRounds } from '@/lib/board-navigation';
+import { pairStandingsBeforeRound, awardedResult, teamBoardImps, contractScore, imps, teamStandingsThroughRound, vp } from '@/lib/scoring';
 import {
   exportMovement,
   exportPbn,
@@ -506,7 +506,7 @@ export default function Scoreboard() {
     ? completedBoardScores.reduce((sum, score) => sum + score, 0) / completedBoardScores.length
     : null;
   const pairMethod = event?.pairMethod ?? 'mp';
-  const displayBoardNumber = (n: number) => (n - 1) % (event?.maxBoardNumber ?? 32) + 1;
+  const displayBoardNumber = (n: number) => displayedBoardNumber(n, event ?? undefined);
   const butlerDatum = averageBoardScore === null ? null : Math.sign(averageBoardScore) * Math.round(Math.abs(averageBoardScore) / 10) * 10;
   const butlerHint = (r?: Result) => r && r.status !== 'cancelled' && r.status !== 'average' && butlerDatum !== null
     ? <span className="muted butler-imp" title="Butler IMP（NS 視角）">({signed(imps(r.nsScore - butlerDatum))})</span> : null;
@@ -558,6 +558,7 @@ export default function Scoreboard() {
   );
   const activeNames = event ? tableNames(event.kind, event.participants, activeAssignment) : {};
   const selectedRoundMatches = event?.projection.matches.filter((m) => m.round === round) ?? [];
+  const roundPairStandings = event?.kind === 'pairs' ? pairStandingsBeforeRound(event, round) : [];
   const roundTeamStandings = event?.kind === 'teams' ? teamStandingsThroughRound(event, round) : [];
   function browseBoard(number: number) {
     setSelectedResult('');
@@ -1144,7 +1145,7 @@ export default function Scoreboard() {
                                   <tr key={a.id}>
                                     <td className="mono">{a.table}</td>
                                     {[a.ns, a.ew].map((id) => {
-                                      const standing = event.projection.standings.find(
+                                      const standing = roundPairStandings.find(
                                         (s) => s.id === id,
                                       );
                                       const score = standing?.score;
@@ -1164,7 +1165,7 @@ export default function Scoreboard() {
                                                 {score == null
                                                   ? '—'
                                                   : `${pairMethod !== 'mp' && score >= 0 ? '+' : ''}${number(score, pairMethod === 'butler' && Number.isInteger(score) ? 0 : 2)}${pairMethod === 'mp' ? '%' : ' IMP'}`}
-                                                {standing && ` / #${standing.rank}`}
+                                                {score != null && standing && ` / #${standing.rank}`}
                                               </small>
                                             </span>
                                           </button>
@@ -2422,8 +2423,8 @@ function AdminPanel({
               e.preventDefault(); const data = new FormData(e.currentTarget);
               void save({ action: 'settings', status: event.status, maxBoardNumber: Number(data.get('maxBoardNumber')), reason: '設定循環顯示最大牌號' });
             }}>
-              <label className="field">最大牌號<input name="maxBoardNumber" type="number" min="1" max="128" required defaultValue={event.maxBoardNumber ?? 32} /></label>
-              <p className="footnote">超過後從牌號 1 重新顯示，各圈成績仍獨立保存。</p>
+              <label className="field">最大牌號<input name="maxBoardNumber" type="number" min="0" max="128" required defaultValue={event.maxBoardNumber ?? (event.kind === 'pairs' ? 0 : 32)} /></label>
+              <p className="footnote">0 表示不設上限，牌號持續遞增；設定正整數則超過後從牌號 1 重新顯示。各圈成績仍獨立保存。</p>
               <button className="button subtle" disabled={busy}>儲存最大牌號</button>
             </form>
 

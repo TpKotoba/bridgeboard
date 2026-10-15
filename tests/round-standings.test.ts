@@ -1,6 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { teamStandingsThroughRound } from '../lib/scoring';
+import { pairStandingsBeforeRound, teamStandingsThroughRound } from '../lib/scoring';
+import { createEvent } from '../lib/events';
+import { resultKey, type Result } from '../lib/model';
+
+test('pairs pre-round scores and ranks exclude this and later rounds for MP, CrossIMP and Butler', () => {
+  for (const pairMethod of ['mp', 'crossimp', 'butler'] as const) {
+    const event = createEvent({ name: 'pre-round', kind: 'pairs', names: ['A', 'B', 'C', 'D'], rounds: 2, boardsPerRound: 1, date: '2026-10-16', venue: '' });
+    event.pairMethod = pairMethod;
+    event.trim = 'none';
+    event.assignments = [1, 2].flatMap(round => [0, 1].map(i => ({ id: `${round}-${i}`, round, table: i + 1, room: 'pairs' as const, ns: event.participants[i * 2].id, ew: event.participants[i * 2 + 1].id, boards: [1], matchId: `${round}-${i}` })));
+    event.results = Object.fromEntries(event.assignments.map((a, i) => [resultKey(a.id, 1), { assignmentId: a.id, board: 1, level: 4, strain: 'H', doubled: 1, declarer: 'N', tricks: 10, lead: '', nsScore: [420, 170, -1100, 1100][i], updatedAt: '' } as Result]));
+    assert.ok(pairStandingsBeforeRound(event, 1).every(row => row.score === null && row.played === 0));
+    const beforeSecond = pairStandingsBeforeRound(event, 2);
+    const first = beforeSecond.find(row => row.id === event.participants[0].id)!;
+    assert.equal(first.score, { mp: 100, crossimp: 6, butler: 3 }[pairMethod]);
+    assert.equal(first.played, 1);
+    // Later scores for the same board must not alter either the comparison pool or ranks.
+    event.results['2-0:1'].nsScore = 7600;
+    assert.deepEqual(pairStandingsBeforeRound(event, 2), beforeSecond);
+    assert.notDeepEqual(pairStandingsBeforeRound(event, 3), beforeSecond);
+  }
+});
 
 test('round VP and ranks exclude later and incomplete matches', () => {
   const event = {

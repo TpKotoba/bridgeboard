@@ -58,8 +58,8 @@ export default function CompetitionHub({ competitionId }: { competitionId?: stri
     <div className="main-shell">
       <header className="topbar"><Breadcrumbs items={[{ label: competition?.name ?? (competitionId ? '賽事主頁' : '瀏覽賽事') }]} />
         {session.admin ? <div ref={account} className="hub-account" onKeyDown={e => { if (e.key === 'Escape') setSessionExpanded(false); }}>
-          <SessionControl director={session.director} menuLabel={!competitionId && session.director ? '刪除比賽' : '功能表'} onMenu={() => {
-            if (!competitionId && session.director) { setDeleting(true); setNotice(''); }
+          <SessionControl director={session.director} menuLabel={session.director ? competitionId ? '刪除賽段' : '刪除比賽' : '功能表'} onMenu={() => {
+            if (session.director) { setDeleting(true); setNotice(''); }
             else setSessionExpanded(!sessionExpanded);
           }} onLogout={async () => {
             try {
@@ -126,10 +126,44 @@ export default function CompetitionHub({ competitionId }: { competitionId?: stri
     </div>
     {creating && <CreateDialog onClose={() => setCreating(false)} onCreated={async id => { location.assign(`/?competition=${encodeURIComponent(id)}`); }} />}
     {addingStage && competition && <CreateDialog competition={competition} onClose={() => { setAddingStage(false); void load().catch(e => setError(e.message)); }} onCreated={async () => { await load(); setAddingStage(false); }} />}
-    {deleting && session.director && <DeleteCompetitionsDialog competitions={competitions} onClose={() => setDeleting(false)} onRefresh={load} onDeleted={async count => {
+    {deleting && session.director && competition && <DeleteStagesDialog competition={competition} onClose={() => setDeleting(false)} onDeleted={async rootDeleted => { setDeleting(false); if (rootDeleted) location.assign('/'); else { setNotice('已刪除賽段。'); await load(); } }} />}
+    {deleting && session.director && !competitionId && <DeleteCompetitionsDialog competitions={competitions} onClose={() => setDeleting(false)} onRefresh={load} onDeleted={async count => {
       setDeleting(false); setNotice(`已刪除 ${count} 場比賽。`); await load();
     }} />}
   </div>;
+}
+
+function DeleteStagesDialog({ competition, onClose, onDeleted }: {
+  competition: Competition;
+  onClose: () => void;
+  onDeleted: (rootDeleted: boolean) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Competition['stages'][number] | null>(null);
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function remove() {
+    if (!selected || busy || confirmation !== selected.name) return;
+    setBusy(true); setError('');
+    try {
+      await request(`/api/admin/events/${encodeURIComponent(selected.id)}`, { confirmStageName: confirmation, revision: selected.revision }, 'DELETE');
+      await onDeleted(selected.id === competition.id);
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  }
+  return <Modal title={selected ? '確認刪除賽段' : '刪除賽段'} onClose={() => { if (!busy) onClose(); }}>
+    {error && <p className="alert error" role="alert">{error}</p>}
+    {selected ? <>
+      <p>確定刪除「{selected.name}」？此賽段的名單與成績將一併刪除，無法復原。</p>
+      {selected.id === competition.id && <p>這是此賽事最後一個賽段，刪除後也會移除賽事。</p>}
+      <label className="field">請輸入賽段名稱「{selected.name}」<input value={confirmation} onChange={e => setConfirmation(e.target.value)} autoComplete="off" disabled={busy} /></label>
+      <div className="button-row"><button type="button" className="button subtle" disabled={busy} onClick={() => setSelected(null)}>返回選擇</button><button type="button" className="button danger" disabled={busy || confirmation !== selected.name} onClick={() => void remove()}>{busy ? '刪除中…' : '確認刪除賽段'}</button></div>
+    </> : <>
+      <p>選擇要刪除的賽段。</p>
+      <div className="delete-competition-list">{competition.stages.map(stage => <button type="button" key={stage.id} className="button subtle" disabled={stage.id === competition.id && competition.stages.length > 1} onClick={() => { setConfirmation(''); setSelected(stage); }}>{stage.name}</button>)}</div>
+      {competition.stages.length > 1 && <p className="footnote">第一賽段包含賽事共用資料，須先刪除其他賽段才能刪除。</p>}
+    </>}
+  </Modal>;
 }
 
 function DeleteCompetitionsDialog({ competitions, onClose, onRefresh, onDeleted }: {
@@ -139,22 +173,24 @@ function DeleteCompetitionsDialog({ competitions, onClose, onRefresh, onDeleted 
   onDeleted: (count: number) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [confirmations, setConfirmations] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const visible = competitions.filter(c => `${c.prefix} ${c.name} ${c.date}`.toLowerCase().includes(query.toLowerCase()));
   const chosen = competitions.filter(c => selected.includes(c.id));
+  const namesMatch = chosen.every(c => confirmations[c.id] === c.name);
   async function remove() {
-    if (busy || !chosen.length) return;
+    if (busy || !chosen.length || !namesMatch) return;
     setBusy(true); setError('');
     try {
       const result = await request<{ deleted: number }>('/api/admin/competitions', {
-        competitions: chosen.map(c => ({ id: c.id, stages: c.stages.map(s => ({ id: s.id, revision: s.revision })) })),
+        competitions: chosen.map(c => ({ id: c.id, confirmName: confirmations[c.id], stages: c.stages.map(s => ({ id: s.id, revision: s.revision })) })),
       }, 'DELETE');
       await onDeleted(result.deleted);
     } catch (e) {
-      setError((e as Error).message); setConfirming(false); setSelected([]);
+      setError((e as Error).message); setConfirming(false); setSelected([]); setConfirmations({});
       await onRefresh().catch(() => {});
     } finally { setBusy(false); }
   }
@@ -168,13 +204,13 @@ function DeleteCompetitionsDialog({ competitions, onClose, onRefresh, onDeleted 
     <div className="delete-competition-list">
       {(confirming ? chosen : visible).map(c => <label className="delete-competition-option" key={c.id}>
         {!confirming && <input type="checkbox" checked={selected.includes(c.id)} onChange={e => setSelected(previous => e.target.checked ? [...previous, c.id] : previous.filter(id => id !== c.id))} />}
-        <span><strong>{[c.prefix, c.name].filter(Boolean).join(' ')}</strong><small>{c.date} · {c.stages.length} 個賽段</small></span>
+        <span><strong>{[c.prefix, c.name].filter(Boolean).join(' ')}</strong><small>{c.date} · {c.stages.length} 個賽段</small>{confirming && <><small>請輸入比賽名稱「{c.name}」</small><input aria-label={`確認比賽名稱：${c.name}`} value={confirmations[c.id] ?? ''} onChange={e => setConfirmations(previous => ({ ...previous, [c.id]: e.target.value }))} autoComplete="off" disabled={busy} /></>}</span>
       </label>)}
       {!visible.length && !confirming && <p>沒有符合的比賽。</p>}
     </div>
     <div className="button-row">
       <button type="button" className="button subtle" disabled={busy} onClick={() => confirming ? setConfirming(false) : onClose()}>{confirming ? '返回勾選' : '取消'}</button>
-      <button type="button" className="button danger" disabled={busy || !chosen.length} onClick={() => confirming ? void remove() : setConfirming(true)}>{busy ? '刪除中…' : confirming ? `確認刪除 ${chosen.length} 場` : `刪除所選 ${chosen.length} 場`}</button>
+      <button type="button" className="button danger" disabled={busy || !chosen.length || (confirming && !namesMatch)} onClick={() => confirming ? void remove() : (setConfirmations({}), setConfirming(true))}>{busy ? '刪除中…' : confirming ? `確認刪除 ${chosen.length} 場` : `刪除所選 ${chosen.length} 場`}</button>
     </div>
   </Modal>;
 }

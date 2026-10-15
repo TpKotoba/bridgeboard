@@ -10,7 +10,7 @@ function fixture() {
   const stage = { ...structuredClone(root), id: 'child-stage', parentEventId: root.id, name: '決賽', revision: 3 };
   const other = { ...structuredClone(root), id: 'other', name: '比賽乙' };
   const data = [root, stage, other].map(event => ({ event, projection: project(event), requests: [] }));
-  const input = { competitions: competitionCatalog(data).map(c => ({ id: c.id, stages: c.stages.map(s => ({ id: s.id, revision: s.revision })) })) };
+  const input = { competitions: competitionCatalog(data).map(c => ({ id: c.id, confirmName: c.name, stages: c.stages.map(s => ({ id: s.id, revision: s.revision })) })) };
   return { data, input, root, stage, other };
 }
 test('batch deletion includes all stages of selected competitions only', () => {
@@ -36,5 +36,17 @@ test('batch deletion rejects empty, duplicate and stage-only selections', () => 
   const { data, input, stage } = fixture();
   assert.equal(deletionSchema.safeParse({ competitions: [] }).success, false);
   assert.throws(() => deletionTargets(data, { competitions: [input.competitions[0], input.competitions[0]] }), /重複/);
-  assert.throws(() => deletionTargets(data, { competitions: [{ id: stage.id, stages: [{ id: stage.id, revision: stage.revision }] }] }), /變更/);
+  assert.throws(() => deletionTargets(data, { competitions: [{ id: stage.id, confirmName: stage.name, stages: [{ id: stage.id, revision: stage.revision }] }] }), /變更/);
+});
+
+test('batch deletion requires an exact name for every selected competition', () => {
+  const { data, input } = fixture();
+  const before = structuredClone(data);
+  for (const value of ['', 'wrong', input.competitions[0].confirmName + ' ']) {
+    const changed = structuredClone(input);
+    changed.competitions[0].confirmName = value;
+    assert.throws(() => deletionTargets(data, changed), /名稱/);
+  }
+  assert.equal(deletionSchema.safeParse({ competitions: [{ id: 'test', stages: [{id:'test', revision:1}] }] }).success, false);
+  assert.deepEqual(data, before);
 });

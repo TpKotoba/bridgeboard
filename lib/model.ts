@@ -226,7 +226,7 @@ export const mutationSchema = z.discriminatedUnion('action', [
       requestId: z.string().uuid(),
       reason: z.string().trim().min(2).max(200),
       status: z.enum(['live', 'finished']),
-      maxBoardNumber: z.number().int().min(1).max(128).optional(),
+      maxBoardNumber: z.number().int().min(0).max(128).optional(),
       publishBoards: z.boolean().optional(),
       awardPlaces: z.number().int().min(0).max(32).optional(),
       awardDescription: z.string().trim().max(2000).optional(),
