@@ -559,13 +559,15 @@ main {
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 18px 20px 14px;
-  min-height: 111px;
+  min-height: 94px;
 }
 .stat-detail {
   color: #929d8e;
   font-size: 11px;
-  margin-top: 8px;
+  margin-left: 8px;
   font-weight: 400;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 .interactive-stat {
   width: 100%;
@@ -640,10 +642,6 @@ main {
   font-weight: 400;
   letter-spacing: 0;
   color: #a1a99f;
-}
-.stat-line {
-  height: 3px;
-  margin-top: 11px;
 }
 .progress-track {
   height: 3px;
@@ -1672,8 +1670,12 @@ select {
     margin-bottom: 19px;
   }
   .stat-card {
-    min-height: 98px;
+    min-height: 86px;
     padding: 14px 15px 10px;
+  }
+  .stat-detail {
+    font-size: 10px;
+    margin-left: 5px;
   }
   .stat-value {
     font-size: 29px;

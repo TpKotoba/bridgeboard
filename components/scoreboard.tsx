@@ -423,6 +423,9 @@ export default function Scoreboard() {
   const currentProgress = event ? (event.collectionProgress ?? roundProgress(event)) : null;
   const progressRound = currentProgress?.round ?? event?.currentRound ?? 0;
   const competitionComplete = event?.status === 'finished' || !!event && allRoundsComplete(event);
+  const receivedResults = Object.values(event?.results ?? {});
+  const cancelledResults = receivedResults.filter(result => result.status === 'cancelled').length;
+  const validResults = receivedResults.length - cancelledResults;
   const roundOnBreak = event?.roundPhase === 'break' || (!event?.club?.enabled &&
     !!currentProgress?.expected && currentProgress.received === currentProgress.expected);
   const currentTiming = event?.roundTimes?.[progressRound];
@@ -810,11 +813,13 @@ export default function Scoreboard() {
                       detail={`每圈 ${event.boardsPerRound} 牌`}
                     />
                     <Stat
-                      label="本圈已收成績"
-                      value={currentProgress?.received ?? 0}
-                      suffix={`/ ${currentProgress?.expected ?? 0}`}
+                      label={competitionComplete ? '有效成績 / 已收成績' : '本圈已收成績'}
+                      value={competitionComplete ? validResults : currentProgress?.received ?? 0}
+                      suffix={`/ ${competitionComplete ? receivedResults.length : currentProgress?.expected ?? 0} 筆`}
                       progress={
-                        currentProgress?.expected
+                        competitionComplete
+                          ? undefined
+                          : currentProgress?.expected
                           ? currentProgress.received / currentProgress.expected
                           : 0
                       }
@@ -856,7 +861,14 @@ export default function Scoreboard() {
                     popover="auto"
                     className="player-detail-popover"
                   >
-                    {!currentProgress?.round ? (
+                    {competitionComplete ? (
+                      <>
+                        <strong>全賽事收分統計</strong>
+                        <div>已收成績：{receivedResults.length} 筆</div>
+                        <div>有效成績：{validResults} 筆</div>
+                        <div>已取消：{cancelledResults} 筆（不計入有效成績）</div>
+                      </>
+                    ) : !currentProgress?.round ? (
                       '尚未指定目前圈數'
                     ) : !currentProgress.expected ? (
                       '本圈尚未安排賽程'
@@ -1915,15 +1927,12 @@ function Stat({
       <div className="stat-value">
         {value}
         <small>{suffix}</small>
+        {detail && <span className="stat-detail">{detail}</span>}
       </div>
-      {detail ? (
-        <div className="stat-detail">{detail}</div>
-      ) : progress !== undefined ? (
+      {progress !== undefined && (
         <div className="progress-track">
           <span style={{ width: `${progress * 100}%` }} />
         </div>
-      ) : (
-        <div className="stat-line" />
       )}
     </>
   );
