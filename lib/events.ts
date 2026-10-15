@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { roundProgress } from './round-progress';
 import { z } from 'zod';
 import {
   Board,
@@ -13,6 +14,7 @@ import {
 } from './model';
 import { contractScore, project } from './scoring';
 import { boardGroups } from './board-groups';
+import { clubAccepted, clubReviewVersion, clubRoles } from './club-confirmation';
 import { parsePbn, parseMovement, exportMovement } from './imports';
 const vulCycle: Vulnerability[] = [
   'None',
@@ -62,6 +64,7 @@ export function createEvent(
     id,
     name: data.name,
     prefix: data.prefix ?? '',
+    ...(data.firstStageName ? { hasStages: true, stageName: data.firstStageName } : {}),
     kind: data.kind,
     date: data.date,
     venue: data.venue,
@@ -81,7 +84,8 @@ export function createEvent(
     revision: 1,
     updatedAt: now,
   };
-  // Fixed round-robin schedule. Every active table plays the same board set that round.
+  // Rotation repeats after each full cycle, with fresh boards and IDs every round.
+  // Every active table plays the same board set that round.
   // Pairs events therefore require duplicate board sets, not a physical Mitchell movement.
   for (let round = 1; round <= data.rounds; round++) {
     const boards = Array.from(
@@ -94,6 +98,7 @@ export function createEvent(
         b = rotation[rotation.length - 1 - i];
       if (!a || !b) continue;
       if ((round + i) % 2 === 0) [a, b] = [b, a];
+      if (data.kind === 'teams' && Number(a.slice(1)) > Number(b.slice(1))) [a, b] = [b, a];
       table++;
       const matchId = `r${round}m${table}`;
       e.assignments.push({
@@ -141,10 +146,68 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     at = new Date().toISOString();
   const changes: { key: string; before: Result | null; after: Result | null }[] = [];
   let detail: string | undefined;
-  if (command.action === 'club-config') {
+  if (command.action === 'team-roster') {
+    const p = e.participants.find(p => p.id === command.participantId);
+    if (e.kind !== 'teams' || !p) throw new DomainError('找不到隊伍');
+    if (new Set(command.players).size !== command.players.length) throw new DomainError('賽員不可重複');
+    const removed = (p.players || '').split('、').filter(n => n && !command.players.includes(n));
+    if (e.assignments.some(a => Object.values(a.playerNames ?? {}).some(n => removed.includes(n)))) throw new DomainError('請先更新使用此賽員的上場名單');
+    p.players = command.players.join('、');
+    p.captain = command.captain;
+    detail = `${p.name}：${p.players}；隊長：${p.captain}`;
+  } else if (command.action === 'table-lineup') {
+    const a = e.assignments.find(a => a.id === command.assignmentId);
+    if (e.kind !== 'teams' || !a) throw new DomainError('找不到隊制桌次');
+    const names = Object.values(command.playerNames).filter(Boolean);
+    if (new Set(names).size !== names.length) throw new DomainError('同桌賽員不可重複');
+    if (e.assignments.some(other => other.id !== a.id && other.round === a.round &&
+      Object.values(other.playerNames ?? {}).some(name => names.includes(name))))
+      throw new DomainError('同一圈賽員不可同時在其他桌上場');
+    for (const seat of ['N', 'E', 'S', 'W'] as const) {
+      const p = e.participants.find(p => p.id === (seat === 'N' || seat === 'S' ? a.ns : a.ew))!;
+      if (command.playerNames[seat] && !p.players.split('、').includes(command.playerNames[seat])) throw new DomainError(`${seat} 姓名不在該隊名單`);
+    }
+    a.playerNames = command.playerNames;
+    detail = `${a.id}：${JSON.stringify(a.playerNames)}`;
+  } else if (command.action === 'competition-settings') {
+    if (e.parentEventId) throw new DomainError('請從賽事主頁修改共用資訊');
+    e.name = command.name;
+    e.prefix = command.prefix;
+    e.date = command.date;
+    e.venue = command.venue;
+    detail = '修改賽事共用名稱、日期與地點';
+  } else if (command.action === 'club-config') {
     if (e.kind !== 'pairs') throw new DomainError('俱樂部模式僅支援雙人賽');
     e.club ??= { enabled: false, tokens: {}, confirmations: {}, finalized: [] };
     e.club.enabled = command.enabled;
+    if (command.inputRule !== undefined || command.assignmentId !== undefined) {
+      if (e.status === 'finished') throw new DomainError('請先重新開放賽事');
+      const previous = new Map(e.assignments.map(a => [a.id, clubRoles(e, a).inputPair]));
+      if (command.inputRule !== undefined) {
+        // Keep settled tables' historical roles when changing future input rules.
+        e.club.inputOverrides ??= {};
+        for (const a of e.assignments) {
+          if (e.club.finalized.includes(a.round)) e.club.inputOverrides[a.id] = previous.get(a.id)!;
+        }
+        e.club.inputRule = command.inputRule;
+      }
+      if (command.assignmentId !== undefined) {
+        const a = e.assignments.find(a => a.id === command.assignmentId);
+        if (!a || e.club.finalized.includes(a.round)) throw new DomainError('桌次不存在或已結算');
+        if (command.inputPair !== null && command.inputPair !== a.ns && command.inputPair !== a.ew) throw new DomainError('輸入方必須是該桌搭檔');
+        e.club.inputOverrides ??= {};
+        if (command.inputPair === null) delete e.club.inputOverrides[a.id];
+        else e.club.inputOverrides[a.id] = command.inputPair;
+      }
+      for (const a of e.assignments) {
+        if (e.club.finalized.includes(a.round)) continue;
+        if (previous.get(a.id) !== clubRoles(e, a).inputPair) {
+          delete e.club.confirmations[`${a.round}:${a.ns}`];
+          delete e.club.confirmations[`${a.round}:${a.ew}`];
+        }
+      }
+      detail = command.assignmentId ? `設定桌次 ${command.assignmentId} 輸入方：${command.inputPair ?? '依全局規則'}` : `設定輸入規則：${command.inputRule}`;
+    }
     if (command.participantId) {
       if (!e.participants.some(p => p.id === command.participantId) || !command.tokenHash) throw new DomainError('搭檔或連結無效');
       e.club.tokens[command.participantId] = command.tokenHash;
@@ -155,16 +218,20 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     const pair = Object.entries(club?.tokens ?? {}).find(([, hash]) => hash === command.tokenHash)?.[0];
     if (!club?.enabled || !pair) throw new DomainError('連結無效或俱樂部模式未開啟', 403);
     if (e.status !== 'live' || command.round !== e.currentRound || e.roundPhase === 'break' || club.finalized.includes(command.round)) throw new DomainError('目前不開放此圈輸入', 409);
-    const confirmation = command.round + ':' + pair;
-    if (club.confirmations[confirmation]) throw new DomainError('本搭檔已確認，本圈輸入已鎖定', 403);
     const a = e.assignments.find(a => a.round === command.round && (a.ns === pair || a.ew === pair));
     if (!a) throw new DomainError('本圈輪空，無需提交');
+    const { inputPair, confirmPair } = clubRoles(e, a);
+    const confirmation = command.round + ':' + confirmPair;
+    if (clubAccepted(e, a)) throw new DomainError('本桌已確認，本圈輸入已鎖定', 403);
     if (command.confirm) {
+      if (pair !== confirmPair) throw new DomainError('輸入方不可確認，請由對方確認', 403);
       if (command.result) throw new DomainError('確認不可同時提交成績');
       if (a.boards.some(b => !e.results[resultKey(a.id, b)])) throw new DomainError('尚有未輸入的牌，請完成後確認');
-      club.confirmations[confirmation] = { at, forced: false };
+      if (command.reviewVersion !== clubReviewVersion(e, a)) throw new DomainError('本桌成績或分工已更新，請重新檢查後確認', 409);
+      club.confirmations[confirmation] = { at, forced: false, reviewVersion: command.reviewVersion };
       detail = pair + ' 確認第 ' + command.round + ' 圈';
     } else {
+      if (pair !== inputPair) throw new DomainError('只能由指定輸入方輸入成績', 403);
       const r = command.result;
       if (!r || r.assignmentId !== a.id || !a.boards.includes(r.board)) throw new DomainError('只能輸入本搭檔當圈成績', 403);
       const b = e.boards.find(b => b.number === r.board)!;
@@ -181,13 +248,8 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     const assignments = e.assignments.filter(a => a.round === command.round);
     if (!assignments.length) throw new DomainError('此圈尚未安排賽程');
     for (const a of assignments) {
-      for (const pair of [a.ns, a.ew]) {
-        const key = command.round + ':' + pair;
-        if (!club.confirmations[key]) {
-          if (!command.force) throw new DomainError('尚有搭檔未確認');
-          club.confirmations[key] = { at, forced: true };
-        }
-      }
+      const accepted = clubAccepted(e, a);
+      if (!accepted && !command.force) throw new DomainError('尚有桌次未收齊成績或對方未確認');
       for (const board of a.boards) {
         const key = resultKey(a.id, board);
         if (!e.results[key]) {
@@ -197,6 +259,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
           e.results[key] = after;
         }
       }
+      if (!accepted) club.confirmations[`${command.round}:${clubRoles(e, a).confirmPair}`] = { at, forced: true, reviewVersion: clubReviewVersion(e, a) };
     }
     club.finalized.push(command.round);
     e.roundPhase = 'break';
@@ -258,6 +321,12 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       throw new DomainError('還有未收齊的成績，不能結束賽事。');
     if (command.status === 'finished' && e.club?.enabled && e.assignments.some(a => !e.club!.finalized.includes(a.round))) throw new DomainError('請先結算所有圈次');
     e.status = command.status;
+    if (command.maxBoardNumber !== undefined) e.maxBoardNumber = command.maxBoardNumber;
+    if ((e.parentEventId || e.hasStages) && (command.name !== undefined || command.prefix !== undefined)) throw new DomainError('賽事共用資訊請至賽事主頁修改');
+    if (command.stageName !== undefined) {
+      if (!e.hasStages && !e.parentEventId) throw new DomainError('此賽事未設賽段');
+      e.stageName = command.stageName;
+    }
     if (command.name !== undefined) e.name = command.name;
     if (command.prefix !== undefined) e.prefix = command.prefix;
     if (command.awardPlaces !== undefined) e.awardPlaces = command.awardPlaces;
@@ -384,11 +453,30 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       throw new DomainError((error as Error).message);
     }
   }
+  if (e.status === 'live' && !e.club?.enabled &&
+      ['results', 'ruling', 'round-control'].includes(command.action)) {
+    if (command.action === 'results') {
+      const latest = roundProgress({ ...e, currentRound: 0 }).round;
+      if (latest > (e.currentRound ?? 0)) {
+        e.currentRound = latest;
+        e.roundPhase = 'playing';
+      }
+    }
+    const progress = roundProgress(e);
+    if (progress.expected > 0 && progress.received === progress.expected) {
+      e.currentRound = progress.round;
+      e.roundPhase = 'break';
+      detail = [detail, `第 ${progress.round} 圈成績收齊，自動進入圈間休息`].filter(Boolean).join('；');
+    }
+  }
   e.revision++;
   e.updatedAt = at;
   e.audit.push({
     at,
     action: {
+      'competition-settings': '賽事共用資訊',
+      'team-roster': '隊伍賽員名單',
+      'table-lineup': '桌次上場名單',
       'club-config': '俱樂部模式設定',
       'club-play': '搭檔提交／確認',
       'club-finalize': '圈次結算',

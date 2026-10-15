@@ -28,8 +28,9 @@ export default function ClubPage() {
     return () => clearInterval(timer);
   }, []);
   useEffect(() => { if (data && draftRound !== data.round) setDraft(null); }, [data?.round, draftRound]);
+  useEffect(() => { if (data?.role !== 'input' || data?.locked || data?.finalized) setDraft(null); }, [data?.role, data?.locked, data?.finalized]);
   function edit(number: number) {
-    if (!data?.assignment) return;
+    if (!data?.assignment || data.role !== 'input' || data.locked) return;
     const r = data.boards.find(b => b.number === number)?.result;
     setDraft(r ? { assignmentId: r.assignmentId, board: r.board, level: r.level, strain: r.strain, doubled: r.doubled, declarer: r.declarer, tricks: r.tricks, lead: r.lead } : {
       assignmentId: data.assignment.id, board: number, level: 1, strain: 'C', doubled: 1, declarer: 'N', tricks: 7, lead: '',
@@ -43,17 +44,18 @@ export default function ClubPage() {
     try {
       const response = await fetch(`/api/club/${encodeURIComponent(context.current.id)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${context.current.token}` },
-        body: JSON.stringify({ requestId: crypto.randomUUID(), round: confirm ? data.round : draftRound, confirm, ...(!confirm ? { result: draft } : {}) }),
+        body: JSON.stringify({ requestId: crypto.randomUUID(), round: confirm ? data.round : draftRound, confirm, ...(!confirm ? { result: draft } : { reviewVersion: data.reviewVersion }) }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
       setDraft(null);
-      setNotice(confirm ? '本圈已確認，本搭檔的輸入已鎖定。' : '成績已儲存。');
+      setNotice(confirm ? '本桌本圈成績已認可，雙方均已鎖定。' : '成績已儲存。');
       await read();
     } catch (e) { setError((e as Error).message); await read().catch(() => {}); }
     finally { submitting.current = false; setBusy(false); }
   }
-  const editable = !!data && data.status === 'live' && !data.locked && !data.finalized && data.phase !== 'break' && data.round > 0;
+  const active = !!data && data.status === 'live' && !data.locked && !data.finalized && data.phase !== 'break' && data.round > 0;
+  const editable = active && data?.role === 'input';
   const board = data?.boards.find(b => b.number === draft?.board);
   const missing = data?.boards.filter(b => !b.result).length ?? 0;
   return <main className="club-page">
@@ -64,12 +66,13 @@ export default function ClubPage() {
       <section className="panel club-section">
         <h2>{data.pair.toUpperCase()} · {data.round ? `第 ${data.round} 圈` : '尚未開始'}</h2>
         {data.assignment ? <><p>桌 {data.assignment.table} · NS {data.names?.ns} ／ EW {data.names?.ew}</p>
-          <p>{data.finalized ? '本圈已結算' : data.locked ? '你已確認；對方更正的最新結果仍會同步顯示。' : data.phase === 'break' ? '圈間休息，暫停輸入' : '確認前可更正，最後成功提交的成績為準。'}</p>
-          <div className="club-board-list">{data.boards.map(b => <button key={b.number} className="button subtle" disabled={!editable || busy || b.result?.status === 'cancelled'} onClick={() => edit(b.number)}>
+          <p>{data.finalized ? '本圈已結算' : data.accepted ? '本桌成績已認可。若需更正，請聯絡裁判。' : data.phase === 'break' ? '圈間休息，暫停輸入與確認' : data.role === 'input' ? '你是輸入方，請輸入全部成績，再由對方確認。' : '你是確認方，請核對全部成績；有誤請告知輸入方更正。'}</p>
+          <div className="club-board-list">{data.boards.map(b => <div key={b.number} className="club-board-result">
             <strong>牌 {b.number}</strong><span>{!b.result ? '未收分' : b.result.status === 'cancelled' ? '取消' : b.result.level === 0 ? 'Pass' : `${b.result.level}${b.result.strain}${b.result.doubled === 2 ? 'x' : b.result.doubled === 4 ? 'xx' : ''} ${b.result.declarer} · ${b.result.tricks} 墩`}</span>
             {b.result && b.result.status !== 'cancelled' && <small>NS {b.result.nsScore > 0 ? '+' : ''}{b.result.nsScore}</small>}
-          </button>)}</div>
-          <p>{data.confirmations.map(c => `${c.pair.toUpperCase()} ${c.confirmed ? '已確認' : '未確認'}`).join(' ／ ')}</p>
+            {data.role === 'input' && <button className="button subtle" disabled={!editable || busy || b.result?.status === 'cancelled'} onClick={() => edit(b.number)}>{b.result ? '更正' : '輸入'}</button>}
+          </div>)}</div>
+          <p>輸入：{data.roles?.inputPair.toUpperCase()} ／ 確認：{data.roles?.confirmPair.toUpperCase()} · {data.accepted ? '已認可' : missing ? '待輸入完成' : '待對方確認'}</p>
         </> : <p>{data.round ? '本圈輪空，無需輸入或確認。' : '等待裁判指定目前圈數。'}</p>}
       </section>
       {draft && editable && <form className="panel club-section" onSubmit={e => { e.preventDefault(); void submit(false); }}>
@@ -85,10 +88,9 @@ export default function ClubPage() {
         <p className="score-preview">NS Score {board ? contractScore(draft, board.vulnerability) : '—'}</p>
         <div className="button-row"><button className="button primary" disabled={busy}>儲存這副成績</button><button type="button" className="button subtle" onClick={() => setDraft(null)}>關閉</button></div>
       </form>}
-      {data.assignment && <section className="panel club-section"><h3>本圈確認</h3><p>確認後，本搭檔所有裝置均無法再輸入本圈。對方仍可更正，必要時請聯絡裁判。</p>
-        {missing > 0 && <p role="status">尚缺 {missing} 副成績，請先補齊；未完成的牌請裁判處理。</p>}
-        <button className="button primary" disabled={!editable || busy || missing > 0 || !!draft} onClick={() => { if (window.confirm('確認本圈成績並鎖定本搭檔的提交權？')) void submit(true); }}>確認本圈並鎖定</button>
-        {draft && <p>請先儲存或關閉正在編輯的成績。</p>}
+      {data.assignment && data.role === 'confirm' && <section className="panel club-section"><h3>本圈確認</h3><p>請核對上方全部成績。確認後本桌成績獲認可，雙方均無法再修改。</p>
+        {missing > 0 && <p role="status">尚缺 {missing} 副成績，等待輸入方補齊；未完成的牌請裁判處理。</p>}
+        <button className="button primary" disabled={!active || busy || missing > 0} onClick={() => { if (window.confirm('已核對全部成績，確認並鎖定本桌本圈？')) void submit(true); }}>確認本桌本圈成績</button>
       </section>}
     </>}
   </main>;

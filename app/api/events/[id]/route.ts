@@ -24,12 +24,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (command.action.startsWith('club-')) throw new DomainError('請使用俱樂部模式入口', 403);
     if (
       command.action === 'settings' &&
-      (command.name !== undefined || command.prefix !== undefined) &&
+      (command.name !== undefined || command.prefix !== undefined || command.maxBoardNumber !== undefined) &&
       !(await isDirector())
     )
       throw new DomainError('修改賽事名稱與前綴僅限裁判', 403);
     if (
-      ['pbn', 'movement', 'board-publication', 'round-control', 'round-timing'].includes(
+      ['pbn', 'movement', 'board-publication', 'round-control', 'round-timing', 'competition-settings', 'team-roster'].includes(
         command.action,
       ) &&
       !(await isDirector())

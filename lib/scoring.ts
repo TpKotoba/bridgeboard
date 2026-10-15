@@ -19,6 +19,22 @@ export function trimScores(values: number[], trim: Trim = 'none') {
           : 0;
   return n ? ordered.slice(n, -n) : ordered;
 }
+export function teamStandingsThroughRound(
+  event: Pick<BridgeEvent, 'participants' | 'penalties'> & { projection: Projection },
+  round: number,
+) {
+  const rows = event.participants.map(p => ({ ...p, score: -(event.penalties?.[p.id] ?? 0), rank: 0 }));
+  for (const match of event.projection.matches.filter(m => m.round <= round)) {
+    if (match.vpA === null || match.vpB === null) continue;
+    rows.find(p => p.id === match.a)!.score += match.vpA;
+    rows.find(p => p.id === match.b)!.score += match.vpB;
+  }
+  rows.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'zh-Hant'));
+  rows.forEach((row, i) => {
+    row.rank = i > 0 && Math.abs(row.score - rows[i - 1].score) < 1e-8 ? rows[i - 1].rank : i + 1;
+  });
+  return rows;
+}
 export function impPairScore(
   score: number,
   all: number[],
@@ -142,15 +158,20 @@ export function project(e: BridgeEvent): Projection {
           continue;
         }
         if (!x || !y) continue;
-        const imp = imps(x.nsScore + y.nsScore);
+        // An imported artificial average is 0 IMP; it still counts toward VP board count.
+        if (x.status === 'average' || y.status === 'average') {
+          match.completed++;
+          continue;
+        }
+        const imp = imps(x.nsScore - y.nsScore);
         match.impsA += Math.max(0, imp);
         match.impsB += Math.max(0, -imp);
         match.completed++;
       }
-      for (const id of [match.a, match.b]) byId[id].played += match.completed - cancelled;
+      for (const id of [match.a, match.b]) byId[id].played += match.completed;
       if (match.completed === match.total && cancelled < match.total) {
-        match.vpA = vp(match.impsA - match.impsB, match.total - cancelled);
-        match.vpB = vp(match.impsB - match.impsA, match.total - cancelled);
+        match.vpA = vp(match.impsA - match.impsB, match.total);
+        match.vpB = vp(match.impsB - match.impsA, match.total);
         byId[match.a].score! += match.vpA;
         byId[match.b].score! += match.vpB;
         byId[match.a].secondary += match.impsA - match.impsB;
@@ -170,6 +191,8 @@ export function project(e: BridgeEvent): Projection {
         .filter((x) => x.r && x.r.status !== 'cancelled');
       for (const a of assignments)
         if (e.results[resultKey(a.id, board.number)]?.status === 'cancelled') {
+          byId[a.ns].played++;
+          byId[a.ew].played++;
           projection.pairScores[resultKey(a.id, board.number)] = {
             ns: null,
             ew: null,

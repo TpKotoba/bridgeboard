@@ -7,7 +7,7 @@ import { DomainError } from '@/lib/events';
 import { resultSchema } from '@/lib/model';
 import { clubView } from '@/lib/club-view';
 export const dynamic = 'force-dynamic';
-const bodySchema = z.object({ requestId: z.string().uuid(), round: z.number().int().min(1), confirm: z.boolean(), result: resultSchema.optional() }).strict();
+const bodySchema = z.object({ requestId: z.string().uuid(), round: z.number().int().min(1), confirm: z.boolean(), reviewVersion: z.string().max(32000).optional(), result: resultSchema.optional() }).strict();
 function hash(request: Request) {
   const token = request.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
   if (!/^[a-f0-9]{64}$/.test(token)) throw new DomainError('請使用裁判提供的專屬連結', 401);

@@ -5,7 +5,16 @@ export type Kind = 'teams' | 'pairs';
 export type PairMethod = 'mp' | 'crossimp' | 'butler';
 export type Trim = 'none' | 'one' | 'ten-percent';
 export type Vulnerability = 'None' | 'NS' | 'EW' | 'All';
-export type Participant = { id: string; name: string; players: string };
+export type Participant = { id: string; name: string; players: string; captain?: string };
+export type CompetitionInfo = {
+  id: string;
+  name: string;
+  prefix: string;
+  date: string;
+  venue: string;
+  hasStages: boolean;
+  revision: number;
+};
 export type Board = {
   number: number;
   group?: string;
@@ -23,6 +32,7 @@ export type Assignment = {
   ew: string;
   boards: number[];
   matchId: string;
+  playerNames?: Partial<Record<Seat, string>>;
 };
 export const resultSchema = z
   .object({
@@ -44,7 +54,7 @@ export type ResultInput = z.infer<typeof resultSchema>;
 export type Result = ResultInput & {
   nsScore: number;
   updatedAt: string;
-  status?: 'played' | 'cancelled';
+  status?: 'played' | 'cancelled' | 'average';
 };
 export type Audit = {
   at: string;
@@ -55,11 +65,18 @@ export type Audit = {
   changes?: { key: string; before: Result | null; after: Result | null }[];
 };
 export type BridgeEvent = {
+  // A root record holds shared competition metadata and its original scoring session.
+  parentEventId?: string;
+  stageName?: string;
+  hasStages?: boolean;
+  competition?: CompetitionInfo;
   club?: {
     enabled: boolean;
     tokens: Record<string, string>;
-    confirmations: Record<string, { at: string; forced: boolean }>;
+    confirmations: Record<string, { at: string; forced: boolean; reviewVersion?: string }>;
     finalized: number[];
+    inputRule?: 'ns' | 'ew' | 'lower' | 'higher';
+    inputOverrides?: Record<string, string>;
   };
   id: string;
   name: string;
@@ -69,6 +86,7 @@ export type BridgeEvent = {
   venue: string;
   rounds: number;
   boardsPerRound: number;
+  maxBoardNumber?: number;
   awardPlaces?: number;
   awardDescription?: string;
   movementDescription?: string;
@@ -92,6 +110,7 @@ export type BridgeEvent = {
 };
 export const createSchema = z
   .object({
+    firstStageName: z.string().trim().min(1).max(80).optional(),
     name: z.string().trim().min(2).max(80),
     prefix: z.string().trim().max(80).optional(),
     kind: z.enum(['teams', 'pairs']),
@@ -115,14 +134,15 @@ export const createSchema = z
       ctx.addIssue({ code: 'custom', message: '名稱不可重複' });
     if (v.kind === 'teams' && v.names.length % 2)
       ctx.addIssue({ code: 'custom', message: '首版隊制賽需偶數隊伍' });
-    if (v.rounds > (v.names.length % 2 ? v.names.length : v.names.length - 1))
-      ctx.addIssue({ code: 'custom', message: '輪次超過單循環上限' });
     if (v.rounds * v.boardsPerRound > 128)
       ctx.addIssue({ code: 'custom', message: '每場最多 128 副' });
   });
 export const mutationSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('club-config'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), enabled: z.boolean(), participantId: z.string().optional(), tokenHash: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict(),
-  z.object({ action: z.literal('club-play'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), tokenHash: z.string().regex(/^[a-f0-9]{64}$/), round: z.number().int().min(1), confirm: z.boolean(), result: resultSchema.optional() }).strict(),
+  z.object({ action: z.literal('team-roster'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), participantId: z.string(), players: z.array(z.string().trim().min(1).max(80)).max(30), captain: z.string().trim().max(80) }).strict(),
+  z.object({ action: z.literal('table-lineup'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), assignmentId: z.string(), playerNames: z.object({ N: z.string().trim().max(80), E: z.string().trim().max(80), S: z.string().trim().max(80), W: z.string().trim().max(80) }).strict() }).strict(),
+  z.object({ action: z.literal('competition-settings'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), name: z.string().trim().min(2).max(80), prefix: z.string().trim().max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => !Number.isNaN(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v, '日期不正確'), venue: z.string().trim().max(80) }).strict(),
+  z.object({ action: z.literal('club-config'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), enabled: z.boolean(), inputRule: z.enum(['ns', 'ew', 'lower', 'higher']).optional(), assignmentId: z.string().optional(), inputPair: z.string().nullable().optional(), participantId: z.string().optional(), tokenHash: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict(),
+  z.object({ action: z.literal('club-play'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), tokenHash: z.string().regex(/^[a-f0-9]{64}$/), round: z.number().int().min(1), confirm: z.boolean(), reviewVersion: z.string().max(32000).optional(), result: resultSchema.optional() }).strict(),
   z.object({ action: z.literal('club-finalize'), revision: z.number().int(), requestId: z.string().uuid(), reason: z.string().min(2).max(200), round: z.number().int().min(1), force: z.boolean() }).strict(),
   z
     .object({
@@ -193,10 +213,12 @@ export const mutationSchema = z.discriminatedUnion('action', [
       requestId: z.string().uuid(),
       reason: z.string().trim().min(2).max(200),
       status: z.enum(['live', 'finished']),
+      maxBoardNumber: z.number().int().min(1).max(128).optional(),
       publishBoards: z.boolean().optional(),
       awardPlaces: z.number().int().min(0).max(32).optional(),
       awardDescription: z.string().trim().max(2000).optional(),
       movementDescription: z.string().trim().max(4000).optional(),
+      stageName: z.string().trim().min(1).max(80).optional(),
       name: z.string().trim().min(2).max(80).optional(),
       prefix: z.string().trim().max(80).optional(),
     })

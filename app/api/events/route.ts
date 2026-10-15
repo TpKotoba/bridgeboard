@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const data = await listEvents();
+    const roots = new Map(data.filter(s => !s.event.parentEventId).map(s => [s.event.id, s.event]));
     return NextResponse.json(
       {
         storage: storageMode(),
@@ -21,8 +22,8 @@ export async function GET() {
             updatedAt: e.updatedAt,
             kind: e.kind,
             pairMethod: e.pairMethod ?? 'mp',
-            date: e.date,
-            venue: e.venue,
+            date: roots.get(e.parentEventId ?? e.id)?.date ?? e.date,
+            venue: roots.get(e.parentEventId ?? e.id)?.venue ?? e.venue,
             status: e.status,
             demo: e.demo,
             participants: e.participants.length,

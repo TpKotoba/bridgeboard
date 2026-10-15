@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEvent, applyMutation } from '../lib/events';
-import { impPairScore, project, trimScores } from '../lib/scoring';
+import { impPairScore, project, trimScores, vp, imps } from '../lib/scoring';
 import { publicBoards } from '../lib/public-event';
 import {
   bestDeclarerTricks,
@@ -214,7 +214,23 @@ test('cancelled team boards contribute no IMP and an entirely cancelled match ea
   const p = project(e);
   assert.equal(p.received, p.expected);
   assert.ok(p.matches.every((m) => m.vpA === null && m.vpB === null && m.completed === 1));
-  assert.ok(p.standings.every((s) => s.score === 0 && s.played === 0));
+  assert.ok(p.standings.every((s) => s.score === 0 && s.played === 1));
+});
+test('cancelled boards retain the scheduled board count in the VP scale', () => {
+  const e = createEvent({ name: 'VP scale', kind: 'teams', date: '2026-10-13', venue: '', names: ['A', 'B', 'C', 'D'], rounds: 1, boardsPerRound: 2 });
+  for (const a of e.assignments) for (const board of a.boards) {
+    e.results[`${a.id}:${board}`] = {
+      assignmentId: a.id, board, level: 0, strain: 'NT', doubled: 1,
+      declarer: 'N', tricks: 0, lead: '', updatedAt: '',
+      nsScore: board === 1 && a.room === 'open' ? 100 : 0,
+      ...(board === 2 ? { status: 'cancelled' as const } : {}),
+    };
+  }
+  const match = project(e).matches[0];
+  assert.equal(match.completed, 2);
+  assert.equal(match.vpA, vp(imps(100), 2));
+  assert.equal(match.vpB, vp(-imps(100), 2));
+  assert.notEqual(match.vpA, vp(imps(100), 1));
 });
 const meta = { revision: 1, requestId: 'test', reason: '裁判測試' };
 test('award and movement descriptions persist and can be cleared independently', () => {
@@ -284,7 +300,8 @@ test('cancelled results are processed, excluded from comparisons, protected from
   });
   assert.equal(n.projection.received, 1);
   assert.equal(n.projection.pairScores[`${a.id}:1`].ns, null);
-  assert.equal(n.projection.standings.find((p) => p.id === a.ns)!.played, 0);
+  assert.equal(n.projection.standings.find((p) => p.id === a.ns)!.played, 1);
+  assert.equal(n.projection.standings.find((p) => p.id === a.ew)!.played, 1);
   assert.equal(n.event.audit.at(-1)!.changes![0].after!.status, 'cancelled');
   const r = {
     assignmentId: a.id,

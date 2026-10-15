@@ -1,4 +1,4 @@
-# Bridgeboard 匯入與匯出格式
+# Valet 匯入與匯出格式
 
 版本：1.0 · 更新日期：2026-10-14
 
@@ -112,7 +112,7 @@ round,table,ns,ew,boards
 
 ### 牌組與發布
 
-`BridgeboardGroup` 是 Bridgeboard 自訂擴充，並非標準 PBN 發布權限標籤；其他軟體未必保留或理解它。
+`BridgeboardGroup` 是 Valet 自訂擴充，並非標準 PBN 發布權限標籤；其他軟體未必保留或理解它。
 
 同一賽事中，相同群組值的牌會一起公開或隱藏，無法在介面或單副發布 API 中拆開操作。匯入群組資訊不等於直接公開牌型。
 
@@ -135,4 +135,4 @@ round,table,ns,ew,boards
 
 請先檢查大小寫、必填值、牌號及搭檔 ID。成績引用不存在的安排、整圈桌次不完整、重複打牌、已收分後改動賽程、缺少手牌或重複手牌都會被拒絕。若其他人已更新賽事，請重新載入並再次驗證，再提交最新版本。
 
-PBN 格式參考：[Portable Bridge Notation 2.1](https://sackab.fi/data/PBN/PBN21a_1.pdf)。本文件描述的是 Bridgeboard 實際支援範圍。
+PBN 格式參考：[Portable Bridge Notation 2.1](https://sackab.fi/data/PBN/PBN21a_1.pdf)。本文件描述的是 Valet 實際支援範圍。

@@ -1,4 +1,4 @@
-# Bridgeboard — 橋牌記分 MVP
+# Valet — 橋牌記分 MVP
 
 繁體中文的隊制賽與雙人賽記分系統，使用 Next.js / TypeScript，支援 Vercel + Neon PostgreSQL。
 
@@ -20,7 +20,7 @@ npm run dev:local
 
 ## 已實作
 
-- 隊制賽：兩房比較、合約分、IMP、WBF 連續 20–0 VP；對戰全部收齊才計入 VP。
+- 隊制賽：開閉兩室比較、合約分、IMP、WBF 連續 20–0 VP；對戰全部收齊才計入 VP。
 - 雙人賽：同副跨桌 MP、CrossIMP 或 ButlerIMP，可為兩種 IMP 模式設定去頭去尾；支援 NS/EW 合併排名、輪空及缺分。
 - 賽事建立、固定循環賽程（可截取輪數）、桌次表、總排名、隊伍／搭檔個別成績、逐副 traveler、四家牌型。
 - 主辦密碼登入、手動收分／更正、版本衝突檢查、原始結果前後差異與稽核。
@@ -93,10 +93,10 @@ npm run typecheck
 npm run build
 ```
 
-測試涵蓋合約分、IMP 邊界、VP、兩房方向、MP 同分／缺分／更正、輪空、CSV/PBN、重送與版本衝突。
+測試涵蓋合約分、IMP 邊界、VP、開閉兩室方向、MP 同分／缺分／更正、輪空、CSV/PBN、重送與版本衝突。
 
-- 正式 DB 備份以 PostgreSQL `pg_dump --format=custom --file=bridgeboard.dump` 執行，連線資訊透過 PG 環境變數提供，將檔案存至部署之外的儲存空間。
-- 還原先建立獨立測試 DB，使用 `pg_restore --no-owner --dbname=<測試資料庫名稱> bridgeboard.dump`（主機／帳密由 PG 環境變數設定），核對場次、revision、成績及稽核筆數後才考慮正式切換。不要對正式資料庫直接試還原。
+- 正式 DB 備份以 PostgreSQL `pg_dump --format=custom --file=Valet.dump` 執行，連線資訊透過 PG 環境變數提供，將檔案存至部署之外的儲存空間。
+- 還原先建立獨立測試 DB，使用 `pg_restore --no-owner --dbname=<測試資料庫名稱> Valet.dump`（主機／帳密由 PG 環境變數設定），核對場次、revision、成績及稽核筆數後才考慮正式切換。不要對正式資料庫直接試還原。
 - 後台 JSON 匯出方便攜出及檢查，目前沒有網頁 JSON 還原按鈕，不能取代 DB 備份。
 - Vercel 程式回退不會回退 DB；新增 schema 應向後相容。
 

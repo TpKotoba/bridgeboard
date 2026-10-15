@@ -4,7 +4,7 @@
 
 ## 已驗證
 
-- `npm test`：12 組通過，涵蓋合約分、IMP、VP、兩房方向、MP、輪空、更正、版本衝突、去重、CSV/PBN、錯誤匯入原子性與日期驗證。
+- `npm test`：12 組通過，涵蓋合約分、IMP、VP、開閉兩室方向、MP、輪空、更正、版本衝突、去重、CSV/PBN、錯誤匯入原子性與日期驗證。
 - `npm run typecheck`：通過。
 - `npm run build`：Next.js 16.4.0 production build 通過。
 - `node scripts/smoke.mjs`：本機雙人賽及隊制賽的登入、建立、收分、重新讀取、去重、409 衝突、400 驗證、結束賽事、未授權及跨來源拒絕均通過。

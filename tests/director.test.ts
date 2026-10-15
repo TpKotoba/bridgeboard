@@ -7,7 +7,20 @@ import { boardGroups, boardRange } from '../lib/board-groups';
 import { publicBoards } from '../lib/public-event';
 import type { StoredEvent, Mutation } from '../lib/model';
 import { mutationSchema } from '../lib/model';
-import { roundProgress } from '../lib/round-progress';
+import { allRoundsComplete, roundProgress } from '../lib/round-progress';
+
+test('completion requires all scheduled rounds, not only the last round', () => {
+  const s = setup();
+  for (const round of [3, 1, 2]) {
+    for (const a of s.stored.event.assignments.filter(a => a.round === round))
+      for (const board of a.boards)
+        s.apply({ action: 'ruling', assignmentId: a.id, board, cancelled: true });
+    assert.equal(allRoundsComplete(s.stored.event), round === 2);
+  }
+  const e = structuredClone(s.stored.event);
+  e.assignments = e.assignments.filter(a => a.round !== 1);
+  assert.equal(allRoundsComplete(e), false);
+});
 
 function setup() {
   const event = createEvent({
@@ -38,6 +51,24 @@ function setup() {
   };
 }
 const header = 'round,table,ns,ew,boards\n';
+test('maximum displayed board number persists without modifying board IDs or results', () => {
+  const s = setup();
+  const before = structuredClone(s.stored.event.boards);
+  s.apply({ action: 'settings', status: 'live', maxBoardNumber: 16 });
+  assert.equal(s.stored.event.maxBoardNumber, 16);
+  assert.deepEqual(s.stored.event.boards, before);
+  assert.deepEqual(s.stored.event.results, {});
+  assert.equal(mutationSchema.safeParse({ action: 'settings', status: 'live', maxBoardNumber: 0, revision: 1, requestId: '00000000-0000-4000-8000-000000000001', reason: 'test' }).success, false);
+});
+test('imported results imply a progress round when no round has been selected', () => {
+  const s = setup();
+  const a = s.stored.event.assignments.find(a => a.round === 3)!;
+  s.apply({ action: 'results', results: [{ assignmentId: a.id, board: a.boards[0], level: 0, strain: 'NT', doubled: 1, declarer: 'N', tricks: 0, lead: '' }] });
+  assert.equal(roundProgress(s.stored.event).round, 3);
+  assert.equal(roundProgress(s.stored.event).received, 1);
+  s.apply({ action: 'round-control', round: 1, phase: 'playing' });
+  assert.equal(roundProgress(s.stored.event).round, 1);
+});
 const first = header + '1,A1,p1,p2,1;2\n1,2o,p3,p4,1;2';
 
 test('Swiss movement accepts complete individual rounds and preserves scored rounds and result IDs', () => {
@@ -242,4 +273,9 @@ test('dashboard counts only current round, includes handled cancellations and re
   const complete = roundProgress(s.stored.event);
   assert.equal(complete.received, 4);
   assert.equal(complete.slowest.length, 0);
+  assert.equal(s.stored.event.currentRound, 1);
+  assert.equal(s.stored.event.roundPhase, 'break');
+  s.apply({ action: 'round-control', round: 2, phase: 'playing' });
+  assert.equal(s.stored.event.currentRound, 2);
+  assert.equal(s.stored.event.roundPhase, 'playing');
 });

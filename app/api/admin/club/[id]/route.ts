@@ -7,6 +7,8 @@ import { requireAdmin, errorResponse, readJson } from '@/lib/http';
 import { DomainError } from '@/lib/events';
 export const dynamic = 'force-dynamic';
 const schema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('input-rule'), inputRule: z.enum(['ns', 'ew', 'lower', 'higher']), revision: z.number().int() }).strict(),
+  z.object({ action: z.literal('input-table'), assignmentId: z.string().min(1), inputPair: z.string().min(1).nullable(), revision: z.number().int() }).strict(),
   z.object({ action: z.literal('enable'), enabled: z.boolean(), revision: z.number().int() }).strict(),
   z.object({ action: z.literal('issue'), pair: z.string().min(1), revision: z.number().int() }).strict(),
   z.object({ action: z.literal('finalize'), round: z.number().int().min(1), force: z.boolean(), reason: z.string().trim().min(2).max(200), revision: z.number().int() }).strict(),
@@ -25,6 +27,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     } else {
       token = input.action === 'issue' ? randomBytes(32).toString('hex') : undefined;
       await mutateEvent(id, { ...meta, action: 'club-config', enabled: input.action === 'enable' ? input.enabled : !!event.club?.enabled,
+        ...(input.action === 'input-rule' ? { inputRule: input.inputRule } : {}),
+        ...(input.action === 'input-table' ? { assignmentId: input.assignmentId, inputPair: input.inputPair } : {}),
         ...(input.action === 'issue' ? { participantId: input.pair, tokenHash: createHash('sha256').update(token!).digest('hex') } : {}),
       });
     }

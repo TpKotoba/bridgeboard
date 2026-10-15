@@ -32,5 +32,5 @@ export function tableNames(
       names[seat] = pair.length === 2 ? pair[index] : participant.name;
     });
   }
-  return names;
+  return { ...names, ...Object.fromEntries(Object.entries(assignment.playerNames ?? {}).filter(([, name]) => name)) };
 }

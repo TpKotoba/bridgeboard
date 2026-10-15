@@ -27,18 +27,32 @@ async function main() {
       assert.equal(issued.status, 200); tokens[p.id] = issued.body.path.split('#')[1];
     }
     assert.equal((await call(`/api/club/${id}`)).status, 401);
+    assert.equal((await command({ action: 'input-rule', inputRule: 'ew' })).status, 200);
+    assert.equal((await command({ action: 'input-table', assignmentId: a.id, inputPair: 'p99' })).status, 400);
+    assert.equal((await command({ action: 'input-table', assignmentId: a.id, inputPair: a.ns })).status, 200);
     assert.equal((await call(`/api/events/${id}`, 'PATCH', { action: 'round-control', round: 1, phase: 'playing', revision: (await admin()).revision, requestId: randomUUID(), reason: 'QA 開始' })).status, 200);
+    assert.equal((await call(`/api/club/${id}`, 'GET', undefined, tokens[a.ns])).body.role, 'input');
+    assert.equal((await command({ action: 'input-table', assignmentId: a.id, inputPair: null })).status, 200);
+    assert.equal((await call(`/api/club/${id}`, 'GET', undefined, tokens[a.ns])).body.role, 'confirm');
+    assert.equal((await command({ action: 'input-rule', inputRule: 'ns' })).status, 200);
     const payload = (board: number, tricks = 9) => ({ assignmentId: a.id, board, level: 3, strain: 'NT', doubled: 1, declarer: 'N', tricks, lead: '' });
     const submit = (pair: string, body: object) => call(`/api/club/${id}`, 'POST', { requestId: randomUUID(), round: 1, ...body }, tokens[pair]);
-    assert.equal((await submit(a.ns, { confirm: true })).status, 400);
+    assert.equal((await submit(a.ns, { confirm: true })).status, 403);
+    assert.equal((await submit(a.ew, { confirm: true })).status, 400);
     const other = e.assignments.find((x: any) => x.id !== a.id);
     assert.equal((await submit(other.ns, { confirm: false, result: payload(1) })).status, 403);
     // Two shared-token devices may both submit; persistence must retry optimistic conflicts.
     const simultaneous = await Promise.all(a.boards.map((b: number) => submit(a.ns, { confirm: false, result: payload(b) })));
     simultaneous.forEach(r => assert.equal(r.status, 200));
-    assert.equal((await submit(a.ns, { confirm: true })).status, 200);
+    assert.equal((await submit(a.ew, { confirm: false, result: payload(1) })).status, 403);
+    const review = await call('/api/club/' + id, 'GET', undefined, tokens[a.ew]);
+    assert.equal(review.body.role, 'confirm');
+    assert.equal((await submit(a.ns, { confirm: false, result: payload(1, 10) })).status, 200);
+    assert.equal((await submit(a.ew, { confirm: true, reviewVersion: review.body.reviewVersion })).status, 409);
+    const latest = await call('/api/club/' + id, 'GET', undefined, tokens[a.ew]);
+    assert.equal((await submit(a.ew, { confirm: true, reviewVersion: latest.body.reviewVersion })).status, 200);
     assert.equal((await submit(a.ns, { confirm: false, result: payload(1, 10) })).status, 403);
-    assert.equal((await submit(a.ew, { confirm: false, result: payload(1, 10) })).status, 200);
+    assert.equal((await submit(a.ew, { confirm: false, result: payload(1, 10) })).status, 403);
     const own = await call(`/api/club/${id}`, 'GET', undefined, tokens[a.ns]);
     assert.equal(own.body.locked, true); assert.equal(own.body.boards[0].result.tricks, 10);
     assert.ok(!JSON.stringify(own.body).includes('token')); assert.ok(!JSON.stringify(own.body).includes('"deal"'));
@@ -46,6 +60,7 @@ async function main() {
     assert.equal(Object.keys(audience.body.results).length, 0); assert.ok(!('club' in audience.body));
     assert.equal((await command({ action: 'finalize', round: 1, force: false, reason: 'QA 正常結算' })).status, 400);
     await login(process.env.ADMIN_PASSWORD ?? 'local-bridge-admin-2026');
+    assert.equal((await call(`/api/admin/club/${id}`, 'POST', { action: 'input-rule', inputRule: 'ew', revision: 1 })).status, 403);
     assert.equal((await call(`/api/admin/club/${id}`, 'POST', { action: 'enable', enabled: false, revision: 1 })).status, 403);
     await login(process.env.DIRECTOR_PASSWORD ?? 'local-bridge-director-2026');
     assert.equal((await command({ action: 'finalize', round: 1, force: true, reason: 'QA 強制結算' })).status, 200);
