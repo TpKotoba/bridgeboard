@@ -7,3 +7,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Git workflow
+
+- After completing and validating a coherent feature or fix, create a commit with a clear message describing the change.
+- The user controls pushes. Do not push unless explicitly requested for that occasion; remind the user when completed commits are ready to push.
+- The project remote is https://github.com/TpKotoba/valet.git.
