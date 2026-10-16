@@ -142,6 +142,8 @@ export const createSchema = z
       ctx.addIssue({ code: 'custom', message: '每場最多 128 副' });
   });
 export const mutationSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('lineups-import'), revision: z.number().int().min(1), requestId: z.string().uuid(), reason: z.string().trim().min(2).max(200), csv: z.string().min(1).max(200000) }).strict(),
+  z.object({ action: z.literal('clear-results'), revision: z.number().int().min(1), requestId: z.string().uuid(), reason: z.string().trim().min(2).max(200), confirmName: z.string().min(1).max(80) }).strict(),
   z.object({ action: z.literal('results-import'), revision: z.number().int().min(1), requestId: z.string().uuid(), reason: z.string().trim().min(2).max(200), csv: z.string().min(1).max(200000) }).strict(),
   z.object({ action: z.literal('round-times-import'), revision: z.number().int().min(1), requestId: z.string().uuid(), reason: z.string().trim().min(2).max(200), csv: z.string().min(1).max(200000) }).strict(),
   z.object({ action: z.literal('movement-plan'), revision: z.number().int().min(1), requestId: z.string().uuid(), reason: z.string().trim().min(2).max(200), plan: z.string().min(1).max(80) }).strict(),

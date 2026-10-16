@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { roundProgress } from './round-progress';
 import { buildMovement } from './movement-plans';
 import { parseRoundTimes } from './round-times-import';
+import { parseLineups } from './lineup-import';
 import { z } from 'zod';
 import {
   Board,
@@ -159,7 +160,27 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     at = new Date().toISOString();
   const changes: { key: string; before: Result | null; after: Result | null }[] = [];
   let detail: string | undefined;
-  if (command.action === 'team-roster') {
+  if (command.action === 'clear-results') {
+    if (command.confirmName !== (e.stageName || e.name)) throw new DomainError('確認名稱不符');
+    for (const [key, before] of Object.entries(e.results)) changes.push({ key, before, after: null });
+    detail = `清除 ${changes.length} 筆成績；原扣分 ${JSON.stringify(e.penalties ?? {})}；原進度 ${e.currentRound ?? 0}／${e.roundPhase ?? 'playing'}／${e.status}；原結算圈次 ${JSON.stringify(e.club?.finalized ?? [])}`;
+    e.results = {};
+    e.penalties = {};
+    e.status = 'live';
+    e.currentRound = 0;
+    e.roundPhase = 'break';
+    if (e.club) { e.club.confirmations = {}; e.club.finalized = []; }
+  } else if (command.action === 'lineups-import') {
+    try {
+      const updates = parseLineups(command.csv, e);
+      detail = updates.map(u => {
+        const a = e.assignments.find(a => a.id === u.assignmentId)!;
+        const change = `${a.id}: ${JSON.stringify(a.playerNames ?? {})} → ${JSON.stringify(u.playerNames)}`;
+        a.playerNames = u.playerNames;
+        return change;
+      }).join('；');
+    } catch (error) { throw new DomainError((error as Error).message); }
+  } else if (command.action === 'team-roster') {
     const p = e.participants.find(p => p.id === command.participantId);
     if (e.kind !== 'teams' || !p) throw new DomainError('找不到隊伍');
     if (new Set(command.players).size !== command.players.length) throw new DomainError('賽員不可重複');
@@ -547,6 +568,8 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     action: {
       'competition-settings': '賽事共用資訊',
       'team-roster': '隊伍賽員名單',
+      'lineups-import': '匯入入座名單',
+      'clear-results': '清除所有成績',
       'table-lineup': '桌次上場名單',
       'club-config': '俱樂部模式設定',
       'club-play': '搭檔提交／確認',

@@ -1,5 +1,7 @@
 'use client';
 import { Breadcrumbs } from './breadcrumbs';
+import { ClearResults } from './clear-results';
+import { parseLineups, exportLineups } from '@/lib/lineup-import';
 import { TeamButlerPopover } from './team-butler-popover';
 import { SplitContractEditor } from './split-contract-editor';
 import { EditorPopover } from './editor-popover';
@@ -2372,6 +2374,9 @@ function AdminPanel({
             )
             .join('\n')}`,
         );
+      } else if (importType === 'lineups') {
+        const rows = parseLineups(text, event);
+        setPreview(`共 ${rows.length} 組入座名單；僅更新所列桌次。\n${rows.map(r => `${r.assignmentId}：${(['N', 'E', 'S', 'W'] as const).map(s => `${s} ${r.playerNames[s] || '未指定'}`).join(' ／ ')}`).join('\n')}`);
       } else if (importType === 'round-times') {
         const rows = parseRoundTimes(text, event);
         const local = (value: string) => new Date(Date.parse(value) + 8 * 3600000).toISOString().slice(0, 16).replace('T', ' ');
@@ -2763,6 +2768,7 @@ function AdminPanel({
                   <option value="pbn">完整牌型 PBN</option>
                   <option value="round-times">各圈時間區間 CSV</option>
                   <option value="movement">賽程編排 CSV</option>
+                  {event.kind === 'teams' && <option value="lineups">入座名單 CSV</option>}
                 </select>
               </label>
               <label className="field">
@@ -2795,6 +2801,8 @@ function AdminPanel({
                   placeholder={
                     importType === 'results'
                       ? 'assignmentId,board,level,strain,doubled,declarer,tricks,lead\nr1m1o,1,3,NT,1,N,9,SA'
+                      : importType === 'lineups'
+                        ? 'assignmentId,N,E,S,W\nr1m1o,北家姓名,東家姓名,南家姓名,西家姓名'
                       : importType === 'movement'
                         ? event.kind === 'teams'
                           ? 'round,table,room,ns,ew,boards\n1,1,open,p1,p2,1;2\n1,1,closed,p2,p1,1;2'
@@ -2826,6 +2834,8 @@ function AdminPanel({
                       const payload =
                         importType === 'results'
                           ? { action: 'results-import', csv: text }
+                          : importType === 'lineups'
+                            ? { action: 'lineups-import', csv: text }
                           : importType === 'pbn'
                             ? { action: 'pbn', pbn: text }
                             : importType === 'round-times'
@@ -2848,6 +2858,8 @@ function AdminPanel({
               <p className="footnote">
                 {importType === 'results'
                   ? '可下載成績 CSV 修改後匯入；保留 assignmentId 與 board。status 可填 played 或 cancelled；取消牌不計分，合約欄可全部留空。匯入 played 會恢復該筆取消成績，請先核對預覽。'
+                  : importType === 'lineups'
+                    ? '欄位：assignmentId,N,E,S,W。先匯出現有入座名單再修改；姓名須在所屬隊伍名單內。空白座位表示清除，未列出的桌次保持不變。'
                   : importType === 'pbn'
                     ? '牌型僅能在尚未收分時替換。'
                     : importType === 'round-times'
@@ -2859,6 +2871,7 @@ function AdminPanel({
               <h4>匯出資料</h4>
               <p>下載目前賽事的成績、賽程或牌型。</p>
               <div className="button-row export-row">
+                {event.kind === 'teams' && <button className="button subtle" onClick={() => download(`${event.id}-lineups.csv`, exportLineups(event), 'text/csv')}><ArrowDownToLine size={16} />入座名單 CSV</button>}
                 <button className="button subtle" onClick={() => download(`${event.id}-round-times.csv`, exportRoundTimes(event), 'text/csv')}>
                   <ArrowDownToLine size={16} />各圈時間區間 CSV
                 </button>
@@ -2912,6 +2925,7 @@ function AdminPanel({
             </section>
           </>
         )}
+        {section === 'import' && event.canDirect && <ClearResults name={event.stageName || event.name} count={Object.keys(event.results).length} busy={busy} save={save} />}
         {section === 'publish' && (
           <>
             {event.canDirect && (event.hasStages || event.parentEventId) && (

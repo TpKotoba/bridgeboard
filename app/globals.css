@@ -4046,3 +4046,5 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
   .team-butler-scope { padding: 0 16px; }
   .team-butler-notes { padding: 12px 16px; }
 }
+.clear-results-control > div > .button { color: #963f45; background: #f8eeee; border-color: #e6cbcb; }
+.clear-results-control > div > .button:hover { background: #f2dfdf; }
