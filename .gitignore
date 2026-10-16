@@ -6,4 +6,5 @@ node_modules/
 .data/
 *.tsbuildinfo
 test-results/
+.tmp/
 /public/vendor/dds/

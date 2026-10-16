@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { roundProgress } from './round-progress';
+import { buildMovement } from './movement-plans';
+import { parseRoundTimes } from './round-times-import';
 import { z } from 'zod';
 import {
   Board,
@@ -306,6 +308,16 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     detail = `${e.currentRound ?? 0} → ${command.round}；${command.phase === 'break' ? '圈間休息' : '進行中'}`;
     e.currentRound = command.round;
     e.roundPhase = command.phase;
+  } else if (command.action === 'round-times-import') {
+    try {
+      const rows = parseRoundTimes(command.csv, e);
+      e.roundTimes ??= {};
+      for (const row of rows) {
+        if (row.startAt && row.endAt) e.roundTimes[row.round] = { startAt: row.startAt, endAt: row.endAt };
+        else delete e.roundTimes[row.round];
+      }
+      detail = rows.map(row => `第 ${row.round} 圈：${row.startAt ?? '清除'} — ${row.endAt ?? '清除'}`).join('；');
+    } catch (error) { throw new DomainError((error as Error).message); }
   } else if (command.action === 'round-timing') {
     if (command.round > e.rounds) throw new DomainError('圈數超過賽程範圍');
     if ((command.startAt === null) !== (command.endAt === null))
@@ -413,6 +425,26 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     changes.push({ key, before: e.results[key] ?? null, after });
     e.results[key] = after;
     detail = `${key}: ${command.cancelled ? 'Cancelled' : '恢復合約'}`;
+  } else if (command.action === 'movement-plan') {
+    if (e.status === 'finished' || Object.keys(e.results).length || e.club?.finalized.length)
+      throw new DomainError('僅能在尚未收分且未結束的賽段套用賽程編排');
+    try {
+      const plan = buildMovement(e, command.plan);
+      e.boards = Array.from({ length: plan.boardCount }, (_, i) => {
+        const old = e.boards.find(b => b.number === i + 1);
+        return { ...(old ?? { ...makeBoard(i + 1), deal: { N: [], E: [], S: [], W: [] }, published: false }),
+          group: `Movement-${Math.floor(i / e.boardsPerRound) + 1}`,
+          ...(e.gameMode === 'minibridge' ? { vulnerability: 'None' as const } : {}) };
+      });
+      parseMovement(exportMovement({ ...e, assignments: plan.assignments }), e);
+      e.assignments = plan.assignments;
+      e.movementImported = true;
+      e.movementDescription = `${plan.option.label}；${plan.option.note}${plan.shared ? '同圈有共用牌組，請準備複製牌或安排共牌。' : ''}`;
+      e.currentRound = 0;
+      e.roundPhase = 'break';
+      if (e.club) { e.club.confirmations = {}; e.club.inputOverrides = {}; }
+      detail = e.movementDescription;
+    } catch (error) { throw new DomainError((error as Error).message); }
   } else if (command.action === 'pbn') {
     if (Object.keys(e.results).length)
       throw new DomainError('已有成績時不可更換牌型與身價。請在收分前匯入。');
@@ -445,7 +477,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     }
   } else {
     if (e.status === 'finished') throw new DomainError('請先重新開放賽事');
-    if (e.kind !== 'pairs') throw new DomainError('Movement 匯入僅適用雙人賽。');
+    if (e.kind !== 'pairs') throw new DomainError('賽程編排匯入僅適用雙人賽。');
     try {
       const incoming = parseMovement(command.csv, e);
       const rounds = new Set(incoming.map((a) => a.round));
@@ -517,10 +549,12 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       results: '收分／更正',
       settings: '發布設定',
       pbn: '匯入牌型',
-      movement: '匯入 movement',
+      movement: '匯入賽程編排',
+      'movement-plan': '套用賽程編排',
       'board-publication': '逐副公開設定',
       'round-control': '設定目前圈數',
       'round-timing': '設定圈次時間',
+      'round-times-import': '匯入各圈時間區間',
       ruling: '裁判取消／恢復',
       'split-contract': '不平衡合約',
       penalty: '裁判 Penalty',

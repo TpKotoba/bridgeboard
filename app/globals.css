@@ -418,8 +418,6 @@ main {
 .button.primary:hover {
   background: #813237;
 }
-.button.score-save { background: #326854; border-color: #326854; color: white; }
-.button.score-save:hover { background: #254f40; }
 .button.danger { background: #963f45; border-color: #963f45; color: white; }
 .button.danger:hover { background: #813237; }
 .admin-version { justify-self: end; margin-left: 24px; }
@@ -3767,8 +3765,6 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
 .club-progress-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
 
 .score-actions .button { font-size: 14px; min-height: 44px; padding: 10px 12px; }
-.score-actions .score-save { background: #edf3ef; border-color: #cddbd2; color: #416552; }
-.score-actions .score-save:hover { background: #e3ece6; }
 .score-actions .button.danger { background: #f7efed; border-color: #e5d4d0; color: #895b56; }
 .score-actions .button.danger:hover { background: #f0e4e1; }
 
@@ -3928,10 +3924,12 @@ main > .section-collapse[aria-controls='event-dashboard'][aria-expanded='false']
 .identity-control button { flex-shrink: 0; border: 0; border-radius: 0; padding: 0 8px; font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
 .identity-control .identity-role { width: 112px; color: #65766b; background: #edf1eb; }
 .identity-control.expanded .identity-role { width: 56px; }
-.identity-control .identity-logout { width: 76px; color: white; background: #273f34; }
-.identity-control .identity-logout:hover { background: #182b22; }
+.identity-control .identity-logout { width: 76px; color: #35533f; background: #edf1eb; }
+.identity-control .identity-logout:hover { background: #e0e9df; }
 .identity-control .identity-menu { width: 72px; color: #35533f; background: #dae5d8; }
 .identity-control .identity-menu:hover { background: #cbdcc8; }
+.identity-control .identity-menu-danger { color: #fff; background: #963f45; }
+.identity-control .identity-menu-danger:hover { background: #813237; }
 @media (prefers-reduced-motion: reduce) { .identity-control { transition: none; } }
 
 .valet-brand-icon { width: 28px; height: 28px; flex-shrink: 0; object-fit: contain; }

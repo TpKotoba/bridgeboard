@@ -1,6 +1,9 @@
 'use client';
 import { Breadcrumbs } from './breadcrumbs';
 import { SplitContractEditor } from './split-contract-editor';
+import { RandomDealsPanel } from './random-deals-panel';
+import { MovementPanel } from './movement-panel';
+import { parseRoundTimes, exportRoundTimes } from '@/lib/round-times-import';
 import { MiniContractFields } from './mini-contract-fields';
 import { participantNumber } from '@/lib/participant-number';
 import { EventCalendar } from './event-calendar';
@@ -109,14 +112,6 @@ function hasDeal(b: PublicEvent['boards'][number]): b is Board {
 }
 function number(n: number | null, places = 2) {
   return n === null ? '—' : n.toFixed(places);
-}
-function taipeiDateInput(value?: string) {
-  return value
-    ? new Date(value)
-        .toLocaleString('sv-SE', { timeZone: 'Asia/Taipei', hour12: false })
-        .slice(0, 16)
-        .replace(' ', 'T')
-    : '';
 }
 function signed(n: number) {
   return n > 0 ? `+${n}` : String(n);
@@ -2267,10 +2262,10 @@ function AdminPanel({
     lead: '',
   });
   const [importType, setImportType] = useState('results'),
+    [importReason, setImportReason] = useState(''),
     [text, setText] = useState(''),
     [preview, setPreview] = useState('');
   const [deleteName, setDeleteName] = useState('');
-  const [timingRound, setTimingRound] = useState(1);
   const load = useCallback(async () => {
     const e = await api<AdminEvent>(`/api/admin/events/${eventId}`, { cache: 'no-store' });
     setEvent(e);
@@ -2283,7 +2278,6 @@ function AdminPanel({
       .then((e) => {
         if (alive) {
           setRound(e.assignments[0].round);
-          setTimingRound(e.currentRound || 1);
           setAssignment(e.assignments[0].id);
           setBoard(e.assignments[0].boards[0]);
         }
@@ -2373,6 +2367,10 @@ function AdminPanel({
             )
             .join('\n')}`,
         );
+      } else if (importType === 'round-times') {
+        const rows = parseRoundTimes(text, event);
+        const local = (value: string) => new Date(Date.parse(value) + 8 * 3600000).toISOString().slice(0, 16).replace('T', ' ');
+        setPreview(`共 ${rows.length} 圈時間（臺灣時間），僅更新所列圈次：\n${rows.map(row => `第 ${row.round} 圈：${row.startAt && row.endAt ? `${local(row.startAt)} — ${local(row.endAt)}` : '清除時間'}`).join('\n')}`);
       } else if (importType === 'pbn') {
         const boards = parsePbn(text);
         setPreview(
@@ -2461,60 +2459,7 @@ function AdminPanel({
                 <p className="footnote">賽事已結束；重新開放後才可調整目前圈數。</p>
               )}
             </form>
-            <form
-              className="round-settings-form"
-              key={`timing-${timingRound}-${JSON.stringify(event.roundTimes?.[timingRound])}`}
-              onSubmit={(e) => {
-                e.preventDefault();
-                const form = new FormData(e.currentTarget);
-                const start = String(form.get('startAt') ?? ''),
-                  end = String(form.get('endAt') ?? '');
-                void save({
-                  action: 'round-timing',
-                  round: timingRound,
-                  startAt: start ? new Date(`${form.get("startDate")}T${start}+08:00`).toISOString() : null,
-                  endAt: end ? new Date(`${form.get("endDate")}T${end}+08:00`).toISOString() : null,
-                  reason: `設定第 ${timingRound} 圈時間區間`,
-                });
-              }}
-            >
-              <h4>各圈時間區間</h4>
-              <label className="field">
-                設定圈次
-                <select
-                  value={timingRound}
-                  onChange={(e) => setTimingRound(Number(e.target.value))}
-                >
-                  {Array.from({ length: event.rounds }, (_, i) => (
-                    <option key={i} value={i + 1}>
-                      第 {i + 1} 圈
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="form-grid">
-                <label className="field">
-                  開始時間（臺灣時間）
-                  <input type="date" name="startDate" aria-label="開始日期" required
-                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.startAt).slice(0, 10) || event.date} />
-                  <input type="time" name="startAt" aria-label="開始時間"
-                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.startAt).slice(11, 16)} />
-                </label>
-                <label className="field">
-                  預定結束時間（臺灣時間）
-                  <input type="date" name="endDate" aria-label="結束日期" required
-                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.endAt).slice(0, 10) || event.date} />
-                  <input type="time" name="endAt" aria-label="結束時間"
-                    defaultValue={taipeiDateInput(event.roundTimes?.[timingRound]?.endAt).slice(11, 16)} />
-                </label>
-              </div>
-              <p className="footnote">
-                開始與結束需一起填寫；兩個時間欄清空後儲存，可清除本圈時間。時間不會自動切換圈次。
-              </p>
-              <button className="button subtle" disabled={busy}>
-                儲存時間區間
-              </button>
-            </form>
+
           </>
         )}
         {error && (
@@ -2743,7 +2688,7 @@ function AdminPanel({
             )}
             <div className="button-row score-actions">
             <button
-              className="button score-save"
+              className="button subtle"
               disabled={busy || event.status === 'finished' || !!existing?.split || existing?.status === 'cancelled'}
             >
               <Check size={16} />
@@ -2795,6 +2740,9 @@ function AdminPanel({
                 <button className="button subtle" disabled={busy}>儲存名單</button>
               </form>)}
             </details>}
+
+            {event.kind === 'pairs' && <MovementPanel key={`movement-${event.id}-${event.revision}`} event={event as BridgeEvent} busy={busy} save={save} />}
+            <RandomDealsPanel key={`deals-${event.id}-${event.revision}`} boards={event.boards} locked={Object.keys(event.results).length > 0} busy={busy} save={save} />
             <section className="import-export-section">
               <h4>匯入資料</h4>
               <label className="field">
@@ -2809,6 +2757,7 @@ function AdminPanel({
                 >
                   <option value="results">成績 CSV</option>
                   <option value="pbn">完整牌型 PBN</option>
+                  <option value="round-times">各圈時間區間 CSV</option>
                   {event.kind === 'pairs' && <option value="movement">賽程編排 CSV</option>}
                 </select>
               </label>
@@ -2844,6 +2793,8 @@ function AdminPanel({
                       ? 'assignmentId,board,level,strain,doubled,declarer,tricks,lead\nr1m1o,1,3,NT,1,N,9,SA'
                       : importType === 'movement'
                         ? 'round,table,ns,ew,boards\n1,1,p1,p2,1;2'
+                        : importType === 'round-times'
+                          ? 'round,startAt,endAt\n1,09:00,09:30\n2,09:35,10:05'
                         : '[Board "1"]\n[Dealer "N"]\n[Vulnerable "None"]\n[Deal "N:..."]'
                   }
                 />
@@ -2853,8 +2804,8 @@ function AdminPanel({
                 <input
                   minLength={2}
                   maxLength={200}
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  value={importReason}
+                  onChange={(e) => setImportReason(e.target.value)}
                 />
               </label>
               <div className="button-row">
@@ -2863,7 +2814,7 @@ function AdminPanel({
                 </button>
                 <button
                   className="button primary"
-                  disabled={!preview || busy || reason.trim().length < 2}
+                  disabled={!preview || busy || importReason.trim().length < 2}
                   onClick={async () => {
                     try {
                       const payload =
@@ -2871,10 +2822,13 @@ function AdminPanel({
                           ? { action: 'results', results: parseResultsCsv(text) }
                           : importType === 'pbn'
                             ? { action: 'pbn', pbn: text }
+                            : importType === 'round-times'
+                              ? { action: 'round-times-import', csv: text }
                             : { action: 'movement', csv: text };
-                      if (await save(payload)) {
+                      if (await save({ ...payload, reason: importReason })) {
                         setPreview('');
                         setText('');
+                        setImportReason('');
                       }
                     } catch (e) {
                       setError((e as Error).message);
@@ -2890,6 +2844,8 @@ function AdminPanel({
                   ? '可下載下方成績 CSV，修改後匯入；請保留桌次識別碼（assignmentId）與牌號（board）。'
                   : importType === 'pbn'
                     ? '牌型僅能在尚未收分時替換。'
+                    : importType === 'round-times'
+                      ? '欄位：round,startAt,endAt。時間使用 HH:mm（賽事日期）或 YYYY-MM-DD HH:mm，皆為臺灣時間。只更新所列圈次；開始與結束皆留空可清除該圈時間。時間不會自動切換圈次。'
                     : '可逐圈匯入，每圈須包含完整賽程；已收分的圈次不可更改。'}
               </p>
             </section>
@@ -2897,6 +2853,9 @@ function AdminPanel({
               <h4>匯出資料</h4>
               <p>下載目前賽事的成績、賽程或牌型。</p>
               <div className="button-row export-row">
+                <button className="button subtle" onClick={() => download(`${event.id}-round-times.csv`, exportRoundTimes(event), 'text/csv')}>
+                  <ArrowDownToLine size={16} />各圈時間區間 CSV
+                </button>
                 <button
                   className="button subtle"
                   onClick={() =>
@@ -3072,10 +3031,6 @@ function AdminPanel({
                 {event.status === 'live' ? '結束賽事' : '重新開放更正'}
               </button>
             </div>
-            <p className="footnote">
-              隊制賽採 WBF 連續 20–0 VP；雙人賽依建立時選定的 MP／CrossIMP／ButlerIMP。Cancelled 與
-              Penalty 可由裁判或賽務操作。加權／平均分及跨組 Neuberg 尚未支援。
-            </p>
             {event.canDirect && (
               <form
                 className="import-export-section"

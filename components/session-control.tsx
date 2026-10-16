@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { listenForOutsideDismiss } from '@/lib/outside-dismiss';
 
-export function SessionControl({ director, onMenu, onLogout, menuLabel = '功能表' }: {
+export function SessionControl({ director, onMenu, onLogout, menuLabel = '功能表', menuDanger = false }: {
   director: boolean;
   onMenu: () => void;
   onLogout: () => Promise<void>;
   menuLabel?: string;
+  menuDanger?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -26,7 +27,7 @@ export function SessionControl({ director, onMenu, onLogout, menuLabel = '功能
         setBusy(true);
         try { await onLogout(); } finally { setBusy(false); }
       }}>{busy ? '處理中' : `${director ? '裁判' : '賽務'}登出`}</button>
-      <button ref={menuButton} type="button" className="identity-menu" onClick={() => { setExpanded(false); onMenu(); }}>{menuLabel}</button>
+      <button ref={menuButton} type="button" className={`identity-menu${menuDanger ? ' identity-menu-danger' : ''}`} onClick={() => { setExpanded(false); onMenu(); }}>{menuLabel}</button>
     </>}
   </div>;
 }

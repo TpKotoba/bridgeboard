@@ -58,7 +58,7 @@ export default function CompetitionHub({ competitionId }: { competitionId?: stri
     <div className="main-shell">
       <header className="topbar"><Breadcrumbs items={[{ label: competition?.name ?? (competitionId ? '賽事主頁' : '瀏覽賽事') }]} />
         {session.admin ? <div ref={account} className="hub-account" onKeyDown={e => { if (e.key === 'Escape') setSessionExpanded(false); }}>
-          <SessionControl director={session.director} menuLabel={session.director ? competitionId ? '刪除賽段' : '刪除比賽' : '功能表'} onMenu={() => {
+          <SessionControl director={session.director} menuDanger={session.director} menuLabel={session.director ? competitionId ? '刪除賽段' : '刪除比賽' : '功能表'} onMenu={() => {
             if (session.director) { setDeleting(true); setNotice(''); }
             else setSessionExpanded(!sessionExpanded);
           }} onLogout={async () => {
@@ -105,7 +105,7 @@ export default function CompetitionHub({ competitionId }: { competitionId?: stri
             </a>)}</div>
           </section>
         </> : <>
-          <div className="page-heading"><div><h1>即時掌握你的表現</h1><p>還在用過時的 Excel 試算表舉辦比賽嗎？</p></div>{session.director && <button className="button primary" onClick={() => setCreating(true)}><Plus size={16} />建立賽事</button>}</div>
+          <div className="page-heading"><div><h1>即時掌握你的表現</h1><p>還在用過時的 Excel 試算表舉辦比賽嗎？</p></div>{session.director && <button className="button subtle" onClick={() => setCreating(true)}><Plus size={16} />建立賽事</button>}</div>
           <div className="hub-search">
             <label className="field" htmlFor="competition-search">搜尋賽事</label>
             <div className="field hub-search-input">
