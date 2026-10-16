@@ -1,5 +1,6 @@
 'use client';
 import { Breadcrumbs } from './breadcrumbs';
+import { TeamButlerPopover } from './team-butler-popover';
 import { SplitContractEditor } from './split-contract-editor';
 import { EditorPopover } from './editor-popover';
 import { RandomDealsPanel } from './random-deals-panel';
@@ -1520,7 +1521,8 @@ export default function Scoreboard() {
                   {tab === 'players' && (
                     <section className="panel player-results">
                       <div className="panel-heading">
-                        <div>
+                        <div className="team-result-intro">
+                          <div>
                           <h3>{event.kind === 'teams' ? '隊伍' : '搭檔'}個別成績</h3>
                           {event.kind === 'teams' && event.participants.find(p => p.id === (person || event.participants[0].id))?.captain && (
                             <p>隊長：{event.participants.find(p => p.id === (person || event.participants[0].id))?.captain}</p>
@@ -1528,6 +1530,8 @@ export default function Scoreboard() {
                           {event.kind === 'teams' && event.participants.find(p => p.id === (person || event.participants[0].id))?.players && (
                             <p>隊員：{event.participants.find(p => p.id === (person || event.participants[0].id))?.players}</p>
                           )}
+                          </div>
+                          {event.kind === 'teams' && <TeamButlerPopover event={event} teamId={person || event.participants[0].id} />}
                         </div>
                         <div className={`player-result-filters${event.kind === 'teams' ? '' : ' pairs-result-filters'}`}>
                         <div className="participant-picker">
