@@ -23,11 +23,24 @@ for (const kind of ['pairs', 'teams'] as const) test(`${kind}: mixed cancelled C
   const restored = applyMutation(imported, command(header + `${id},2,3,NT,1,N,9,,played`, 2));
   assert.equal(restored.event.results[`${id}:2`].status ?? 'played', 'played');
   assert.equal(restored.event.results[`${id}:2`].nsScore, 600);
-  for (const bad of [csv + `\n${id},2,,,,,,,cancelled`, csv + '\nmissing,1,,,,,,,cancelled', header + `${id},1,,,,,,,average`]) {
+  for (const bad of [csv + `\n${id},2,,,,,,,cancelled`, csv + '\nmissing,1,,,,,,,cancelled', header + `${id},1,,,,,,,unknown`]) {
     assert.throws(() => applyMutation(stored, command(bad)));
     assert.deepEqual(stored.event.results, {});
   }
   assert.throws(() => mutationSchema.parse({ action: 'results', revision: 1, requestId: randomUUID(), reason: '不得繞過', results: parseResultsCsv(csv) }));
   assert.throws(() => applyMutation({ ...stored, event: { ...event, status: 'finished' } }, command(csv)), /重新開放/);
+  for (const status of ['average', 'Average', ' AVERAGE ']) {
+    const legacy = applyMutation(stored, command(header + `${id},1,,,,,,,${status}`));
+    assert.equal(legacy.event.results[`${id}:1`].status, 'cancelled');
+    assert.equal(legacy.event.results[`${id}:1`].nsScore, 0);
+    assert.equal(legacy.event.audit.at(-1)?.changes?.[0].after?.status, 'cancelled');
+    assert.ok(!exportResultsCsv(legacy.event).includes('average'));
+    if (kind === 'pairs') assert.equal(legacy.projection.pairScores[`${id}:1`].ns, null);
+  }
+  const legacyResult = { ...imported.event.results[`${id}:1`], status: 'average' as const };
+  const exported = exportResultsCsv({ ...event, results: { [`${id}:1`]: legacyResult } });
+  assert.ok(exported.includes('cancelled'));
+  assert.ok(!exported.includes('average'));
+  assert.equal(parseResultsCsv(exported)[0].status, 'cancelled');
 });
 
