@@ -1,6 +1,7 @@
 'use client';
 import { Breadcrumbs } from './breadcrumbs';
 import { SplitContractEditor } from './split-contract-editor';
+import { EditorPopover } from './editor-popover';
 import { RandomDealsPanel } from './random-deals-panel';
 import { MovementPanel } from './movement-panel';
 import { parseRoundTimes, exportRoundTimes } from '@/lib/round-times-import';
@@ -2363,7 +2364,7 @@ function AdminPanel({
             .slice(0, 5)
             .map(
               (r) =>
-                `${r.assignmentId} · B${r.board} · ${displayContract(r)} ${r.declarer} ${resultText(r)}`,
+                `${r.assignmentId} · B${r.board} · ${r.status === 'cancelled' ? 'Cancelled（取消，不計分）' : `${displayContract(r)} ${r.declarer} ${resultText(r)}`}`,
             )
             .join('\n')}`,
         );
@@ -2379,7 +2380,7 @@ function AdminPanel({
       } else {
         const rows = parseMovement(text, event as BridgeEvent);
         setPreview(
-          `共 ${rows.length} 組桌次安排；匯入所列輪次，已收分的輪次不得改動。首次匯入會取代尚未收分的預設賽程。`,
+          `共 ${rows.length} 組桌次安排；匯入所列輪次，已收分的輪次不得改動。${event.kind === 'teams' ? '未列出的輪次保持不變；每場對戰包含開室與閉室。' : '首次匯入會取代尚未收分的預設賽程。'}`,
         );
       }
     } catch (e) {
@@ -2728,8 +2729,7 @@ function AdminPanel({
         )}
         {section === 'import' && event.canDirect && (
           <>
-            {event.kind === 'teams' && <details className="panel">
-              <summary>隊伍賽員名單</summary>
+            {event.kind === 'teams' && <EditorPopover className="import-export-section" title="隊伍賽員名單">
               {event.participants.map(p => <form key={`${p.id}-${event.revision}`} className="round-settings-form" onSubmit={e => {
                 e.preventDefault(); const data = new FormData(e.currentTarget);
                 void save({ action: 'team-roster', participantId: p.id, captain: String(data.get('captain')), players: String(data.get('players')).split(/[\n、]/).map(n => n.trim()).filter(Boolean), reason: '更新隊伍賽員名單' });
@@ -2739,7 +2739,7 @@ function AdminPanel({
                 <label className="field">賽員（每行一人）<textarea name="players" defaultValue={p.players.split('、').join('\n')} /></label>
                 <button className="button subtle" disabled={busy}>儲存名單</button>
               </form>)}
-            </details>}
+            </EditorPopover>}
 
             {event.kind === 'pairs' && <MovementPanel key={`movement-${event.id}-${event.revision}`} event={event as BridgeEvent} busy={busy} save={save} />}
             <RandomDealsPanel key={`deals-${event.id}-${event.revision}`} boards={event.boards} locked={Object.keys(event.results).length > 0} busy={busy} save={save} />
@@ -2758,7 +2758,7 @@ function AdminPanel({
                   <option value="results">成績 CSV</option>
                   <option value="pbn">完整牌型 PBN</option>
                   <option value="round-times">各圈時間區間 CSV</option>
-                  {event.kind === 'pairs' && <option value="movement">賽程編排 CSV</option>}
+                  <option value="movement">賽程編排 CSV</option>
                 </select>
               </label>
               <label className="field">
@@ -2792,7 +2792,9 @@ function AdminPanel({
                     importType === 'results'
                       ? 'assignmentId,board,level,strain,doubled,declarer,tricks,lead\nr1m1o,1,3,NT,1,N,9,SA'
                       : importType === 'movement'
-                        ? 'round,table,ns,ew,boards\n1,1,p1,p2,1;2'
+                        ? event.kind === 'teams'
+                          ? 'round,table,room,ns,ew,boards\n1,1,open,p1,p2,1;2\n1,1,closed,p2,p1,1;2'
+                          : 'round,table,ns,ew,boards\n1,1,p1,p2,1;2'
                         : importType === 'round-times'
                           ? 'round,startAt,endAt\n1,09:00,09:30\n2,09:35,10:05'
                         : '[Board "1"]\n[Dealer "N"]\n[Vulnerable "None"]\n[Deal "N:..."]'
@@ -2819,7 +2821,7 @@ function AdminPanel({
                     try {
                       const payload =
                         importType === 'results'
-                          ? { action: 'results', results: parseResultsCsv(text) }
+                          ? { action: 'results-import', csv: text }
                           : importType === 'pbn'
                             ? { action: 'pbn', pbn: text }
                             : importType === 'round-times'
@@ -2841,12 +2843,12 @@ function AdminPanel({
               {preview && <pre className="import-preview">{preview}</pre>}
               <p className="footnote">
                 {importType === 'results'
-                  ? '可下載下方成績 CSV，修改後匯入；請保留桌次識別碼（assignmentId）與牌號（board）。'
+                  ? '可下載成績 CSV 修改後匯入；保留 assignmentId 與 board。status 可填 played 或 cancelled；取消牌不計分，合約欄可全部留空。匯入 played 會恢復該筆取消成績，請先核對預覽。'
                   : importType === 'pbn'
                     ? '牌型僅能在尚未收分時替換。'
                     : importType === 'round-times'
                       ? '欄位：round,startAt,endAt。時間使用 HH:mm（賽事日期）或 YYYY-MM-DD HH:mm，皆為臺灣時間。只更新所列圈次；開始與結束皆留空可清除該圈時間。時間不會自動切換圈次。'
-                    : '可逐圈匯入，每圈須包含完整賽程；已收分的圈次不可更改。'}
+                    : `可先匯出賽程再修改，逐圈匯入時每圈須包含完整賽程；已收分的圈次不可更改，已結束賽事須先重新開放。${event.kind === 'teams' ? '隊制賽需填寫 room：open（開室）、closed（閉室），同桌兩室隊伍須交換方向、牌組須相同。' : ''}`}
               </p>
             </section>
             <section className="import-export-section">
@@ -2869,7 +2871,6 @@ function AdminPanel({
                   <ArrowDownToLine size={16} />
                   成績 CSV
                 </button>
-                {event.kind === 'pairs' && (
                   <button
                     className="button subtle"
                     onClick={() =>
@@ -2883,7 +2884,6 @@ function AdminPanel({
                     <ArrowDownToLine size={16} />
                     賽程編排 CSV
                   </button>
-                )}
                 <button
                   className="button subtle"
                   onClick={() => download(`${event.id}.pbn`, exportPbn(event as BridgeEvent))}
@@ -3148,8 +3148,7 @@ function AdminPanel({
                     })}
                   </small>
                   {a.changes && (
-                    <details>
-                      <summary>{a.changes.length} 筆結果變更</summary>
+                    <EditorPopover title={`${a.changes.length} 筆結果變更`}>
                       {a.changes.map((c) => (
                         <p className="mono" key={c.key}>
                           {c.key}：
@@ -3167,7 +3166,7 @@ function AdminPanel({
                             : '刪除'}
                         </p>
                       ))}
-                    </details>
+                    </EditorPopover>
                   )}
                 </div>
               </div>

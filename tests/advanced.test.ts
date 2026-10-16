@@ -318,7 +318,7 @@ test('cancelled results are processed, excluded from comparisons, protected from
       applyMutation(n, { ...meta, requestId: 'two', revision: 2, action: 'results', results: [r] }),
     /裁判/,
   );
-  assert.throws(() => parseResultsCsv(exportResultsCsv(n.event)), /裁判/);
+  assert.equal(parseResultsCsv(exportResultsCsv(n.event))[0].status, 'cancelled');
   const restored = applyMutation(n, {
     ...meta,
     requestId: 'two',

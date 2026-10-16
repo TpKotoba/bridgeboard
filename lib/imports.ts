@@ -44,11 +44,14 @@ export function parseCsv(text: string): Record<string, string>[] {
     return Object.fromEntries(header.map((h, j) => [h, r[j]]));
   });
 }
-export function parseResultsCsv(text: string): ResultInput[] {
+export function parseResultsCsv(text: string): (ResultInput & { status?: 'cancelled' })[] {
   return parseCsv(text).map((r, i) => {
     if (r.splitNS || r.splitEW) throw new Error(`第 ${i + 2} 列：不平衡合約請由裁判重新套用，不能用一般收分匯入`);
-    if (r.status && r.status !== 'played')
-      throw new Error(`第 ${i + 2} 列：Cancelled 請由裁判在後台裁定，不能用一般 CSV 收分匯入`);
+    const status = r.status?.toLowerCase();
+    if (status && status !== 'played' && status !== 'cancelled')
+      throw new Error(`第 ${i + 2} 列：status 僅接受 played 或 cancelled`);
+    if (status === 'cancelled' && ['level', 'strain', 'doubled', 'declarer', 'tricks'].every(key => !r[key]))
+      Object.assign(r, { level: '0', strain: 'NT', doubled: '1', declarer: 'N', tricks: '0' });
     for (const key of ['assignmentId', 'board', 'level', 'strain', 'doubled', 'declarer', 'tricks'])
       if (!r[key]?.trim()) throw new Error(`第 ${i + 2} 列：${key} 不可空白`);
     const parsed = resultSchema.safeParse({
@@ -62,7 +65,7 @@ export function parseResultsCsv(text: string): ResultInput[] {
       lead: r.lead ?? '',
     });
     if (!parsed.success) throw new Error(`第 ${i + 2} 列：${parsed.error.issues[0].message}`);
-    return parsed.data;
+    return status === 'cancelled' ? { ...parsed.data, status: 'cancelled' as const } : parsed.data;
   });
 }
 export const resultsCsvHeader =
@@ -100,13 +103,14 @@ export function exportResultsCsv(e: BridgeEvent) {
 }
 export function exportMovement(e: BridgeEvent) {
   return (
-    'round,table,ns,ew,boards\n' +
+    (e.kind === 'teams' ? 'round,table,room,ns,ew,boards\n' : 'round,table,ns,ew,boards\n') +
     e.assignments
-      .map((a) => [a.round, a.table, a.ns, a.ew, a.boards.join(';')].map(csvCell).join(','))
+      .map((a) => [a.round, a.table, ...(e.kind === 'teams' ? [a.room] : []), a.ns, a.ew, a.boards.join(';')].map(csvCell).join(','))
       .join('\n')
   );
 }
 export function parseMovement(text: string, e: BridgeEvent): Assignment[] {
+  if (e.kind === 'teams') return parseTeamMovement(text, e);
   const rows = parseCsv(text),
     assignments: Assignment[] = [];
   const occupied = new Set<string>(),
@@ -163,6 +167,32 @@ export function parseMovement(text: string, e: BridgeEvent): Assignment[] {
     )
       throw new Error(`第 ${round} 輪桌次不完整`);
   return assignments;
+}
+function parseTeamMovement(text: string, e: BridgeEvent): Assignment[] {
+  const rows = parseCsv(text);
+  const rooms = new Map<string, Record<string, string>>();
+  for (const row of rows) {
+    if (!['open', 'closed'].includes(row.room)) throw new Error('隊制賽 room 須為 open（開室）或 closed（閉室）');
+    const key = `${Number(row.round)}:${/^\d+$/.test(row.table) ? Number(row.table) : row.table}:${row.room}`;
+    if (rooms.has(key)) throw new Error('同一輪桌號與開閉室重複');
+    rooms.set(key, row);
+  }
+  const opens = rows.filter(r => r.room === 'open');
+  if (!opens.length || rows.length !== opens.length * 2) throw new Error('每場對戰須同時包含開室與閉室');
+  const csv = 'round,table,ns,ew,boards\n' + opens.map(r => [r.round, r.table, r.ns, r.ew, r.boards].map(csvCell).join(',')).join('\n');
+  const matches = parseMovement(csv, { ...e, kind: 'pairs' });
+  return matches.flatMap(a => {
+    const closed = rooms.get(`${a.round}:${a.table}:closed`);
+    if (!closed || closed.ns !== a.ew || closed.ew !== a.ns) throw new Error(`第 ${a.round} 輪桌 ${a.table} 開閉室隊伍須交換方向`);
+    const boards = closed.boards.split(';').map(Number);
+    if (boards.length !== a.boards.length || [...boards].sort((x, y) => x - y).join(',') !== [...a.boards].sort((x, y) => x - y).join(','))
+      throw new Error(`第 ${a.round} 輪桌 ${a.table} 開閉室牌組須相同`);
+    const matchId = `r${a.round}m${a.table}`;
+    return [
+      { ...a, id: `${matchId}o`, matchId, room: 'open' as const },
+      { ...a, id: `${matchId}c`, matchId, room: 'closed' as const, ns: a.ew, ew: a.ns },
+    ];
+  });
 }
 export function parsePbn(text: string): Board[] {
   const records = text

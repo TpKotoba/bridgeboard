@@ -4,6 +4,7 @@ import type { Result, ResultInput, Vulnerability } from '@/lib/model';
 import { resultSchema } from '@/lib/model';
 import { contractScore } from '@/lib/scoring';
 import { MiniContractFields } from './mini-contract-fields';
+import { EditorPopover } from './editor-popover';
 
 export function SplitContractEditor({
   result,
@@ -38,14 +39,16 @@ export function SplitContractEditor({
   const [reason, setReason] = useState('');
   const valid = Object.values(contracts).every((r) => resultSchema.safeParse(r).success);
   return (
-    <details className="split-contract-editor">
-      <summary>{result.split ? '不平衡合約（已套用）' : '裁判判罰：不平衡合約'}</summary>
+    <EditorPopover className="split-contract-editor" title={result.split ? '不平衡合約（已套用）' : '裁判判罰：不平衡合約'}>
       <p className="footnote">
         分別指定 NS、EW 獲判的完整合約及實得墩數。雙方各自與另一室比較，VP 總和不一定為
         20；原始紀錄仍保留。
       </p>
       {(['ns', 'ew'] as const).map((side) => {
         const r = contracts[side];
+        const score = resultSchema.safeParse(r).success
+          ? contractScore(r, vulnerability, miniBridge) * (side === 'ns' ? 1 : -1)
+          : null;
         const update = (patch: Partial<ResultInput>) =>
           setContracts({ ...contracts, [side]: { ...r, ...patch } });
         return (
@@ -125,11 +128,11 @@ export function SplitContractEditor({
                   onChange={(e) => update({ tricks: Number(e.target.value) })}
                 />
               </label>
+              <div className="score-preview" aria-live="polite" aria-atomic="true">
+                <span>{side.toUpperCase()} 獲判原始分</span>
+                <strong>{score === null ? '—' : `${score > 0 ? '+' : ''}${score}`}</strong>
+              </div>
             </div>
-            <p className="mono">
-              {side.toUpperCase()} 獲判原始分：
-              {valid ? contractScore(r, vulnerability, miniBridge) * (side === 'ns' ? 1 : -1) : '—'}
-            </p>
           </fieldset>
         );
       })}
@@ -173,6 +176,6 @@ export function SplitContractEditor({
           </button>
         )}
       </div>
-    </details>
+    </EditorPopover>
   );
 }

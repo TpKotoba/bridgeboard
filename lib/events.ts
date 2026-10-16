@@ -18,7 +18,7 @@ import {
 import { contractScore, project } from './scoring';
 import { boardGroups } from './board-groups';
 import { clubAccepted, clubReviewVersion, clubRoles } from './club-confirmation';
-import { parsePbn, parseMovement, exportMovement } from './imports';
+import { parsePbn, parseMovement, exportMovement, parseResultsCsv } from './imports';
 const vulCycle: Vulnerability[] = [
   'None',
   'NS',
@@ -283,20 +283,25 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     }
     detail = '第 ' + command.round + ' 圈結算並發布' + (command.force ? '（強制確認並取消未收牌）' : '');
     if (e.currentRound !== command.round) detail += `；第 ${e.currentRound} 圈開始進行`;
-  } else if (command.action === 'results') {
+  } else if (command.action === 'results' || command.action === 'results-import') {
     if (e.status === 'finished') throw new DomainError('請先重新開放賽事，再更正成績。');
     const seen = new Set<string>();
-    for (const r of command.results) {
+    let rows: (ResultInput & { status?: 'cancelled' })[];
+    try { rows = command.action === 'results-import' ? parseResultsCsv(command.csv) : command.results; }
+    catch (error) { throw new DomainError((error as Error).message); }
+    for (const r of rows) {
       const a = e.assignments.find((a) => a.id === r.assignmentId),
         b = e.boards.find((b) => b.number === r.board);
       if (!a || !b || !a.boards.includes(r.board)) throw new DomainError('桌次與牌號不符合賽程。');
       const key = resultKey(a.id, b.number);
       if (e.results[key]?.split) throw new DomainError('請先由裁判撤銷不平衡合約，再更正原始成績', 403);
-      if (e.results[key]?.status === 'cancelled')
+      if (e.results[key]?.status === 'cancelled' && command.action !== 'results-import')
         throw new DomainError('Cancelled 成績只能由裁判恢復。', 403);
       if (seen.has(key)) throw new DomainError('同一批資料包含重複成績。');
       seen.add(key);
-      const after = { ...scoredInput(r, e, b), updatedAt: at };
+      const after: Result = r.status === 'cancelled'
+        ? { ...r, status: 'cancelled', nsScore: 0, updatedAt: at }
+        : { ...scoredInput(r, e, b), updatedAt: at };
       changes.push({ key, before: e.results[key] ?? null, after });
       e.results[key] = after;
     }
@@ -477,7 +482,6 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     }
   } else {
     if (e.status === 'finished') throw new DomainError('請先重新開放賽事');
-    if (e.kind !== 'pairs') throw new DomainError('賽程編排匯入僅適用雙人賽。');
     try {
       const incoming = parseMovement(command.csv, e);
       const rounds = new Set(incoming.map((a) => a.round));
@@ -489,7 +493,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       for (const a of incoming) {
         if (!scoredRounds.has(a.round)) continue;
         const old = e.assignments.find(
-          (item) => item.round === a.round && String(item.table) === String(a.table),
+          (item) => item.round === a.round && String(item.table) === String(a.table) && item.room === a.room,
         );
         if (
           !old ||
@@ -501,10 +505,11 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
           throw new Error(`第 ${a.round} 輪已有成績，不可改動其賽程`);
         a.id = old.id;
         a.matchId = old.matchId;
+        a.playerNames = old.playerNames;
       }
       const combined = [
         ...e.assignments.filter(
-          (a) => !rounds.has(a.round) && (e.movementImported || scoredRounds.has(a.round)),
+          (a) => !rounds.has(a.round) && (e.kind === 'teams' || e.movementImported || scoredRounds.has(a.round)),
         ),
         ...incoming,
       ];
@@ -520,8 +525,8 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
     }
   }
   if (e.status === 'live' && !e.club?.enabled &&
-      ['results', 'ruling', 'split-contract', 'round-control'].includes(command.action)) {
-    if (command.action === 'results') {
+      ['results', 'results-import', 'ruling', 'split-contract', 'round-control'].includes(command.action)) {
+    if (command.action === 'results' || command.action === 'results-import') {
       const latest = roundProgress({ ...e, currentRound: 0 }).round;
       if (latest > (e.currentRound ?? 0)) {
         e.currentRound = latest;
@@ -547,6 +552,7 @@ export function applyMutation(stored: StoredEvent, command: Mutation): StoredEve
       'club-play': '搭檔提交／確認',
       'club-finalize': '圈次結算',
       results: '收分／更正',
+      'results-import': '匯入成績',
       settings: '發布設定',
       pbn: '匯入牌型',
       movement: '匯入賽程編排',
